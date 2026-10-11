@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import func, select, text
 
-from app.api import admin, auth, chat, system
+from app.api import admin, auth, chat, container_admin, containers, system
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import User
@@ -60,6 +60,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
+app.include_router(containers.router, prefix="/api")
+app.include_router(container_admin.router, prefix="/api")
 
 
 @app.get("/api/health")

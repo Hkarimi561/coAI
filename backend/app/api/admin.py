@@ -1,7 +1,7 @@
 import asyncio
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -11,10 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models import Conversation, Document, Feedback, Message, Solution, ToolCall, TurnEvent, User, WebCacheEntry
-from app.schemas import ConversationOut, MessageOut, UserCreate, UserOut, UserUpdate
+from app.models import Conversation, Document, Feedback, Lesson, Message, Solution, ToolCall, TurnEvent, User, WebCacheEntry
+from app.schemas import ConversationOut, LessonEdit, LessonOut, MessageOut, UserCreate, UserOut, UserUpdate
 from app.security import hash_password, require_admin
-from app.services import analytics, ingestion, promotion
+from app.services import analytics, ingestion, lessons as lesson_svc, promotion, settings_store
 from app.services.chat_service import remove_solution_vector
 from app.services.websearch import get_websearch
 
@@ -363,3 +363,113 @@ async def update_user(
         user.password_hash = hash_password(body.password)
     await session.commit()
     return user
+
+
+# ------------------------------------------------------------------ runtime settings
+SETTING_LABELS = {
+    "web_search_enabled": "Live web search (SearXNG / Tavily)",
+    "github_docs_enabled": "GitHub project documentation (llms.txt, README, docs/*.md)",
+    "answer_cache_enabled": "Chat answer cache",
+}
+
+
+@router.get("/settings")
+async def get_runtime_settings() -> dict[str, Any]:
+    values = await settings_store.get_all()
+    return {"settings": [{"key": k, "label": SETTING_LABELS[k], "enabled": v} for k, v in values.items()]}
+
+
+class SettingsIn(BaseModel):
+    web_search_enabled: bool | None = None
+    github_docs_enabled: bool | None = None
+    answer_cache_enabled: bool | None = None
+
+
+@router.put("/settings")
+async def update_runtime_settings(body: SettingsIn, admin: User = Depends(require_admin)) -> dict[str, Any]:
+    for key, value in body.model_dump(exclude_none=True).items():
+        await settings_store.set_bool(key, value, admin.id)
+    # cached answers may have been produced with a different source mix
+    from app.services.answer_cache import bump_kb_version
+
+    await bump_kb_version()
+    return await get_runtime_settings()
+
+
+# ------------------------------------------------------------------ taught lessons (verification queue)
+@router.get("/lessons")
+async def list_lessons(
+    status: str = Query(default="pending", pattern="^(pending|approved|rejected|all)$"),
+    page: int = 1,
+    page_size: int = 20,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    page, page_size = _page(page, page_size)
+    conds = [] if status == "all" else [Lesson.status == status]
+    total = (await session.execute(select(func.count(Lesson.id)).where(*conds))).scalar_one()
+    rows = (
+        await session.execute(select(Lesson).where(*conds).order_by(Lesson.created_at.desc()).limit(page_size).offset((page - 1) * page_size))
+    ).scalars().all()
+    pending = (await session.execute(select(func.count(Lesson.id)).where(Lesson.status == "pending"))).scalar_one()
+    return {"total": total, "page": page, "page_size": page_size, "pending": pending, "items": [LessonOut.of(r, with_user=True) for r in rows]}
+
+
+async def _lesson(session: AsyncSession, lesson_id: uuid.UUID) -> Lesson:
+    lesson = await session.get(Lesson, lesson_id)
+    if lesson is None:
+        raise HTTPException(404, "Lesson not found")
+    return lesson
+
+
+def _apply_edit(lesson: Lesson, body: LessonEdit) -> None:
+    if body.title is not None:
+        lesson.title = body.title
+    if body.applies_when is not None:
+        lesson.applies_when = body.applies_when
+    if body.instruction is not None:
+        lesson.instruction = body.instruction
+
+
+@router.patch("/lessons/{lesson_id}", response_model=LessonOut)
+async def edit_lesson(lesson_id: uuid.UUID, body: LessonEdit, session: AsyncSession = Depends(get_session)) -> LessonOut:
+    lesson = await _lesson(session, lesson_id)
+    _apply_edit(lesson, body)
+    await session.commit()
+    if lesson.status == "approved":  # keep the live knowledge in sync with the edit
+        await lesson_svc.index_lesson(lesson)
+    return LessonOut.of(lesson, with_user=True)
+
+
+@router.post("/lessons/{lesson_id}/approve", response_model=LessonOut)
+async def approve_lesson(
+    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+) -> LessonOut:
+    """Verify (optionally after editing): the lesson becomes searchable knowledge for everyone."""
+    lesson = await _lesson(session, lesson_id)
+    _apply_edit(lesson, body)
+    try:
+        await lesson_svc.index_lesson(lesson)
+    except Exception as exc:  # embedding / vector store failure: leave it pending so it can be retried
+        raise HTTPException(502, f"Could not index the lesson (embedding model / Qdrant): {exc}") from exc
+    lesson.status, lesson.reviewer_id, lesson.review_note, lesson.reviewed_at = "approved", admin.id, body.note, datetime.now(UTC)
+    convo = await session.get(Conversation, lesson.conversation_id)
+    if convo:
+        convo.status = "resolved"
+    await session.commit()
+    return LessonOut.of(lesson, with_user=True)
+
+
+@router.post("/lessons/{lesson_id}/reject", response_model=LessonOut)
+async def reject_lesson(
+    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+) -> LessonOut:
+    lesson = await _lesson(session, lesson_id)
+    was_approved = lesson.status == "approved"
+    lesson.status, lesson.reviewer_id, lesson.review_note, lesson.reviewed_at = "rejected", admin.id, body.note, datetime.now(UTC)
+    convo = await session.get(Conversation, lesson.conversation_id)
+    if convo:
+        convo.status = "resolved"
+    await session.commit()
+    if was_approved:
+        await lesson_svc.remove_lesson_vector(lesson.id)
+    return LessonOut.of(lesson, with_user=True)

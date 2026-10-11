@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     searxng_url: str = "http://searxng:8080"
     tavily_api_key: str | None = None
     websearch_max_results: int = 6
+    # GitHub project documentation (llms.txt / README / docs/*.md) as a web-research source; also switchable in the admin UI
+    github_docs_enabled: bool = True
+    github_docs_max_repos: int = 2
+    github_docs_max_files: int = 3
     websearch_timeout_s: float = 20.0
     web_cache_ttl_hours: int = 24 * 14
     web_negative_ttl_hours: int = 1

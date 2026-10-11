@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { CITATION_LABEL } from "@/lib/labels";
 import type { Citation } from "@/lib/types";
 
-const TONE = { doc: "info", solution: "success", web: "warning", docker: "neutral", ci: "neutral" } as const;
+const TONE = { doc: "info", lesson: "success", solution: "success", github: "info", web: "warning", docker: "neutral", ci: "neutral" } as const;
 
 export function CitationList({ citations }: { citations: Citation[] }) {
   if (!citations.length) return null;

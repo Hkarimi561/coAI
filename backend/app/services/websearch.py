@@ -7,7 +7,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from typing import Any, Protocol
+from typing import Any
 
 import httpx
 from qdrant_client import models
@@ -20,28 +20,14 @@ from app.models import WebCacheEntry
 from app.redaction import redact
 from app.redis_client import get_redis
 from app.services.answer_cache import bump_kb_version
+from app.services import settings_store
 from app.services.container import get_embedder, get_vectorstore
+from app.services.github_docs import GithubDocsProvider
+from app.services.search_types import SearchProvider, SearchResult, WebSearchError
 
 log = logging.getLogger(__name__)
 
 _RELEASE_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
-
-
-class WebSearchError(RuntimeError):
-    pass
-
-
-@dataclass
-class SearchResult:
-    title: str
-    url: str
-    snippet: str
-
-
-class SearchProvider(Protocol):
-    name: str
-
-    async def search(self, query: str, limit: int) -> list[SearchResult]: ...
 
 
 class SearxngProvider:
@@ -130,19 +116,28 @@ class WebSearchService:
     def __init__(self) -> None:
         self.s = get_settings()
         self.redis = get_redis()
-        self.provider: SearchProvider | None = None
+        self.web_provider: SearchProvider | None = None
         name = self.s.websearch_provider.lower()
         try:
             if name == "searxng":
-                self.provider = SearxngProvider()
+                self.web_provider = SearxngProvider()
             elif name == "tavily":
-                self.provider = TavilyProvider()
+                self.web_provider = TavilyProvider()
         except WebSearchError as exc:
-            log.warning("Web search disabled: %s", exc)
+            log.warning("Web search provider unavailable: %s", exc)
+        self.github = GithubDocsProvider()
 
-    @property
-    def enabled(self) -> bool:
-        return self.provider is not None
+    async def providers(self) -> list[SearchProvider]:
+        """Providers that may be used right now: configured AND switched on in the admin settings."""
+        active: list[SearchProvider] = []
+        if await settings_store.get_bool("github_docs_enabled"):
+            active.append(self.github)  # authoritative project docs first
+        if self.web_provider is not None and await settings_store.get_bool("web_search_enabled"):
+            active.append(self.web_provider)
+        return active
+
+    async def is_enabled(self) -> bool:
+        return bool(await self.providers())
 
     # -- cache ------------------------------------------------------------
     @staticmethod
@@ -223,21 +218,20 @@ class WebSearchService:
         await bump_kb_version()
         return True
 
-    async def _store(self, key: str, query: str, signature: str, results: list[SearchResult]) -> CachedWeb:
-        assert self.provider is not None
+    async def _store(self, key: str, query: str, signature: str, results: list[SearchResult], provider_name: str) -> CachedWeb:
         now = datetime.now(UTC)
         ttl = timedelta(hours=self.s.web_cache_ttl_hours if results else self.s.web_negative_ttl_hours)
         data = [asdict(r) for r in results]
         stmt = (
             pg_insert(WebCacheEntry)
             .values(
-                cache_key=key, query_text=query, error_signature=signature, provider=self.provider.name,
+                cache_key=key, query_text=query, error_signature=signature, provider=provider_name,
                 results=data, answer=None, hit_count=0, expires_at=now + ttl,
             )
             .on_conflict_do_update(
                 index_elements=[WebCacheEntry.cache_key],
                 set_={
-                    "query_text": query, "error_signature": signature, "provider": self.provider.name, "results": data,
+                    "query_text": query, "error_signature": signature, "provider": provider_name, "results": data,
                     "answer": None, "expires_at": now + ttl, "invalidated_at": None, "invalidated_by": None, "created_at": now,
                 },
             )
@@ -270,6 +264,24 @@ class WebSearchService:
         except Exception:
             log.exception("Could not index web cache entry %s (semantic lookup disabled for it)", entry.cache_key)
 
+    async def _run(self, providers: list[SearchProvider], query: str) -> list[SearchResult]:
+        """Query all active providers concurrently; partial failure is tolerated, total failure is an error."""
+        limits = {"github": 6}
+        outs = await asyncio.gather(
+            *(p.search(query, limits.get(p.name, self.s.websearch_max_results)) for p in providers), return_exceptions=True
+        )
+        results: list[SearchResult] = []
+        errors: list[str] = []
+        for p, out in zip(providers, outs, strict=True):
+            if isinstance(out, BaseException):
+                errors.append(f"{p.name}: {out}")
+                log.warning("search provider %s failed: %s", p.name, out)
+            else:
+                results += out
+        if not results and errors:
+            raise WebSearchError("; ".join(errors))
+        return results
+
     # -- single-flight search --------------------------------------------
     async def search(self, key: str, query: str, signature: str, refresh: bool = False) -> tuple[CachedWeb, str]:
         """Returns (entry, event) with event in cache_hit | coalesced | fresh.
@@ -277,8 +289,9 @@ class WebSearchService:
         Exactly one concurrent caller performs the outbound request for a given key (Redis lock);
         the others poll the shared cache until the winner has stored the result.
         """
-        if not self.provider:
-            raise WebSearchError("Web search is not configured")
+        providers = await self.providers()
+        if not providers:
+            raise WebSearchError("Web search is disabled (admin settings) or not configured")
         if refresh:  # explicit user request: forget the cached research first, then search for real
             await self.invalidate_key(key)
         lock_key, err_key = f"sf:lock:{key}", f"sf:err:{key}"
@@ -299,14 +312,12 @@ class WebSearchService:
                     if entry:
                         return entry, ("coalesced" if waited else "cache_hit")
                     try:
-                        results = await self.provider.search(query, self.s.websearch_max_results)
+                        results = await self._run(providers, query)
                     except WebSearchError:
                         await self.redis.set(err_key, "1", ex=20)
                         raise
-                    results = [
-                        SearchResult(redact(r.title), r.url, redact(r.snippet)) for r in results
-                    ]
-                    return await self._store(key, query, signature, results), "fresh"
+                    results = [SearchResult(redact(r.title), r.url, redact(r.snippet), r.source) for r in results]
+                    return await self._store(key, query, signature, results, "+".join(p.name for p in providers)), "fresh"
                 finally:
                     await self.redis.eval(_RELEASE_LUA, 1, lock_key, token)
 

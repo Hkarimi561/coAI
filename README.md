@@ -123,6 +123,25 @@ For every user message the backend runs an explicit state machine (`backend/app/
 
 **Analytics** (*Admin → Dashboard*) are computed from the database: conversations & resolution rate, daily volume, source distribution (local docs / confirmed solutions / web cache / fresh web / Docker / CI), web searches performed vs avoided and cache hit rate, status split, and the top recurring error signatures. *Admin → Web cache* lists entries and lets you invalidate them manually.
 
+## Admin settings (no restart needed)
+
+*Admin → Settings* switches, applied immediately: **live web search** (SearXNG/Tavily) on/off, **GitHub project docs** on/off, **chat answer cache** on/off. With web search off no request leaves the network except (if enabled) to GitHub; previously cached research is still used. The header and *System status* page show the current state.
+
+## Project documentation from GitHub
+
+When local sources are insufficient (or you ask to search the web) the assistant also reads the documentation of the projects you mention, straight from GitHub, and cites the file URLs: it finds the repositories for the keywords (`angular` → `angular/angular`, `nginx` → `nginx/nginx`; or use a `github.com/owner/repo` link), reads `llms.txt` (from the repo's homepage, e.g. `https://angular.dev/llms.txt`, else the repo root) and follows the linked pages that match the question, then the `README` and the best matching `docs/**/*.md`. The most relevant sections are returned and stored in the normal web cache (same single-flight lock, so a question is researched once). Set `GITHUB_TOKEN` to raise the API rate limit. Fetches from hosts taken from repository metadata are restricted to public HTTPS hosts.
+
+## Teaching the assistant
+
+*Chat → "آموزش به هوش مصنوعی"* opens a **teaching chat**. A team member tells the assistant a procedure/rule; the assistant restates it and asks clarifying questions (no retrieval, nothing executed). When satisfied the user presses **Send for admin review**: the conversation is turned into a lesson (title / when it applies / what to do). Admins review it in *Admin → Lessons* (edit, approve or reject, with the full teaching chat one click away). Only **approved** lessons are indexed and used as high-priority knowledge in answers (cited as "verified lesson"); rejecting an approved lesson removes it again. Users track their lessons under *My lessons*.
+
+## Container access control
+
+`DOCKER_ALLOWED_CONTAINERS` is the outer boundary. Inside it, *Admin → Container access* grants each user, per container (exact name or glob such as `api-*`): **logs** (see state, read logs) or **logs + actions** (also start/stop/restart). Users without a grant cannot see the container at all — neither on the *Containers* page nor through the assistant (the assistant only inspects containers the asking user may read). Admins have full access. Example: user A → `b`, `c` with actions; user D → `c` with logs only.
+
+* Actions happen **only** from a confirmed click on the Containers page, are rate-limited and every attempt (also denied ones) is written to the audit log. The assistant itself still never executes anything.
+* Actions additionally require `DOCKER_PROXY_ALLOW_ACTIONS=1` (enables only `start`/`stop`/`restart` on the socket proxy; `docker compose up -d docker-proxy`). Note that the proxy's restart permission also covers `kill`; the backend never calls it.
+
 ## Configuration reference
 
 All settings are environment variables (see `.env.example`, which documents every one). Highlights:

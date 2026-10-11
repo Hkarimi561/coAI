@@ -17,7 +17,9 @@ from app.redaction import redact, redact_obj
 from app.schemas import MessageOut
 from app.services import answer_cache, memory
 from app.services.answer_cache import bump_kb_version
-from app.services.container import get_embedder, get_vectorstore
+from app.services.container import get_embedder, get_llm, get_vectorstore
+from app.services.lessons import TEACH_PROMPT
+from app.services.llm import LLMError
 from app.services.workflow import Emit, TroubleshootingWorkflow, TurnState
 from app.textnorm import truncate_middle
 
@@ -40,7 +42,7 @@ def _history_for_llm(rows: list[Message]) -> list[dict[str, str]]:
     return [{"role": m.role, "content": truncate_middle(m.content, 1800)} for m in rows if m.meta.get("kind") != "request_error"]
 
 
-async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False) -> None:
+async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False, user_id: uuid.UUID | None = None, is_admin: bool = False) -> None:
     """Runs one user turn end-to-end. Never raises; failures are emitted as `error` events."""
     try:
         redacted = redact(content).strip()
@@ -60,8 +62,9 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             if short_research_request:
                 effective = next((m.content for m in prev if m.role == "user"), redacted)
 
+            is_teach = convo.mode == "teach"
             state: dict[str, Any] = dict(convo.state or {})
-            if state.get("phase", "idle") == "idle" or not state.get("original_problem"):
+            if not is_teach and (state.get("phase", "idle") == "idle" or not state.get("original_problem")):
                 state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": effective[:1500],
                          "memory": state.get("memory")}
             if not convo.title:
@@ -73,7 +76,12 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             await session.commit()
             await emit("user_message", MessageOut.of(user_msg).model_dump(mode="json"))
 
-        st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh)
+        if is_teach:
+            await _teach_turn(conversation_id, emit)
+            return
+
+        st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh,
+                       user_id=str(user_id) if user_id else None, is_admin=is_admin)
         await _workflow.run(st, emit)
 
         sig = st.signature
@@ -122,6 +130,47 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
     except Exception as exc:  # noqa: BLE001
         log.exception("Turn failed")
         await emit("error", {"message": redact(f"{type(exc).__name__}: {exc}")[:300]})
+
+
+async def _teach_turn(conversation_id: uuid.UUID, emit: Emit) -> None:
+    """Teaching chat: no retrieval. The assistant restates what it understood and asks clarifying questions."""
+    async with SessionLocal() as session:
+        rows = (
+            await session.execute(
+                select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(20)
+            )
+        ).scalars().all()
+    history = [{"role": m.role, "content": truncate_middle(m.content, 2500)} for m in reversed(rows) if m.meta.get("kind") != "ack"]
+    chunks: list[str] = []
+    thoughts: list[str] = []
+    llm_error = None
+    await emit("status", {"step": "generate"})
+    try:
+        async for channel, piece in get_llm().stream([{"role": "system", "content": TEACH_PROMPT}, *history]):
+            if channel == "think":
+                thoughts.append(piece)
+                await emit("thinking", {"text": piece})
+            else:
+                chunks.append(piece)
+                await emit("token", {"text": piece})
+    except LLMError as exc:
+        llm_error = str(exc)
+        if not chunks:
+            chunks.append("⚠️ مدل زبانی در دسترس نیست؛ پیام شما ذخیره شد و همچنان می‌توانید آن را برای تأیید ادمین ارسال کنید.")
+            await emit("token", {"text": chunks[0]})
+    meta: dict[str, Any] = {"kind": "teach"}
+    if thoughts:
+        meta["thinking"] = redact("".join(thoughts)).strip()[:30000]
+    if llm_error:
+        meta["llm_error"] = redact(llm_error)
+    async with SessionLocal() as session:
+        msg = Message(conversation_id=conversation_id, role="assistant", content=redact("".join(chunks)).strip(), meta=meta)
+        session.add(msg)
+        convo = await session.get(Conversation, conversation_id)
+        if convo is not None:
+            convo.updated_at = datetime.now(UTC)
+        await session.commit()
+        await emit("done", MessageOut.of(msg).model_dump(mode="json"))
 
 
 async def submit_feedback(

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, MessageSquare, Shield, Terminal } from "lucide-react";
+import { Boxes, GraduationCap, LogOut, MessageSquare, Shield, Terminal } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
@@ -40,6 +40,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const nav = [
     { href: "/chat", label: "گفتگو", icon: MessageSquare, show: true },
+    { href: "/containers", label: "کانتینرها", icon: Boxes, show: true },
+    { href: "/lessons", label: "آموزش‌های من", icon: GraduationCap, show: true },
     { href: "/admin", label: "مدیریت", icon: Shield, show: me.role === "admin" },
   ];
 

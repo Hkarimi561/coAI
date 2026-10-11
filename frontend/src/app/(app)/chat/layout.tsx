@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { GraduationCap, Plus } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -26,10 +26,15 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full">
       <aside className="hidden w-72 shrink-0 flex-col border-e border-border bg-card md:flex" aria-label="گفتگوها">
-        <div className="p-3">
+        <div className="space-y-2 p-3">
           <Button asChild className="w-full">
             <Link href="/chat">
               <Plus className="h-4 w-4" /> گفتگوی جدید
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="w-full">
+            <Link href="/chat?teach=1">
+              <GraduationCap className="h-4 w-4" /> آموزش به هوش مصنوعی
             </Link>
           </Button>
         </div>
@@ -47,7 +52,7 @@ export default function ChatLayout({ children }: { children: ReactNode }) {
                     pathname === `/chat/${c.id}` && "bg-muted font-medium",
                   )}
                 >
-                  <span className={cn("h-2 w-2 shrink-0 rounded-full", DOT[c.status])} aria-hidden />
+                  {c.mode === "teach" ? <GraduationCap className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="گفتگوی آموزشی" /> : <span className={cn("h-2 w-2 shrink-0 rounded-full", DOT[c.status])} aria-hidden />}
                   <span className="truncate" dir="auto">
                     {c.title || "گفتگوی جدید"}
                   </span>

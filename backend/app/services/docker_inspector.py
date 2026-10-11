@@ -49,16 +49,52 @@ class DockerInspector:
         return bool(_NAME_OK.match(name)) and any(fnmatch.fnmatch(name, p) for p in self.patterns)
 
     async def _get(self, path: str, params: dict | None = None) -> httpx.Response:
+        return await self._request("GET", path, params)
+
+    async def _request(self, method: str, path: str, params: dict | None = None, ok: tuple[int, ...] = ()) -> httpx.Response:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.base}{path}", params=params)
+            async with httpx.AsyncClient(timeout=30 if method == "POST" else 10) as client:
+                resp = await client.request(method, f"{self.base}{path}", params=params)
         except httpx.HTTPError as exc:
             raise DockerError(f"Docker API unreachable: {exc}") from exc
+        if resp.status_code in ok:
+            return resp
         if resp.status_code == 404:
             raise DockerError("Container not found")
+        if resp.status_code == 403 and method == "POST":
+            raise DockerError("Container actions are disabled on the Docker socket proxy (set DOCKER_PROXY_ALLOW_ACTIONS=1 and recreate docker-proxy)")
         if resp.status_code >= 400:
             raise DockerError(f"Docker API returned HTTP {resp.status_code} (is the socket proxy allowing CONTAINERS=1?)")
         return resp
+
+    async def list_containers(self) -> list[dict]:
+        """Allow-listed containers with basic state (names only; never environment variables)."""
+        if not self.enabled:
+            return []
+        out = []
+        for c in (await self._get("/containers/json", {"all": "true"})).json():
+            for n in c.get("Names", []):
+                n = n.lstrip("/")
+                if self._allowed(n):
+                    out.append({"name": n, "image": c.get("Image"), "state": c.get("State"), "status": c.get("Status")})
+        return sorted(out, key=lambda x: x["name"])
+
+    async def read_logs(self, name: str, tail: int) -> str:
+        if not self.enabled or not self._allowed(name) or name not in await self.allowed_names():
+            raise DockerError("Container is not in the allow-list")
+        info = (await self._get(f"/containers/{name}/json")).json()
+        tty = bool((info.get("Config") or {}).get("Tty"))
+        resp = await self._get(f"/containers/{name}/logs", {"stdout": "true", "stderr": "true", "tail": str(max(1, min(tail, 2000))), "timestamps": "true"})
+        return redact(_demux(resp.content) if not tty else resp.content.decode("utf-8", "replace"))
+
+    async def action(self, name: str, action: str) -> None:
+        """start | stop | restart. Only ever invoked from an explicit, permission-checked click in the UI - never by the assistant."""
+        if action not in ("start", "stop", "restart"):
+            raise DockerError("Unsupported action")
+        if not self.enabled or not self._allowed(name) or name not in await self.allowed_names():
+            raise DockerError("Container is not in the allow-list")
+        params = {"t": "10"} if action in ("stop", "restart") else None
+        await self._request("POST", f"/containers/{name}/{action}", params, ok=(204, 304))
 
     async def allowed_names(self) -> list[str]:
         if not self.enabled:
@@ -75,9 +111,13 @@ class DockerInspector:
         self._names, self._names_at = sorted(set(names)), time.monotonic()
         return self._names
 
-    async def match_in_text(self, text: str) -> tuple[list[str], list[str]]:
-        """Returns (allowed containers mentioned in text, container-looking names mentioned but NOT allowed)."""
+    async def match_in_text(self, text: str, only: list[str] | None = None) -> tuple[list[str], list[str]]:
+        """Returns (containers mentioned in text that the caller may read, container-looking names mentioned but NOT permitted).
+
+        `only` narrows the globally allow-listed containers to those a specific user may access."""
         allowed = await self.allowed_names()
+        if only is not None:
+            allowed = [n for n in allowed if n in only]
         found = [n for n in allowed if re.search(rf"(?<![\w.-]){re.escape(n)}(?![\w.-])", text, flags=re.I)]
         refused: list[str] = []
         for m in re.finditer(r"(?:container|کانتینر)\s+[`'\"]?([A-Za-z0-9][\w.-]{1,62})", text, flags=re.I):

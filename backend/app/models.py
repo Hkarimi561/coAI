@@ -43,6 +43,7 @@ class Conversation(Base):
     status: Mapped[str] = mapped_column(String(24), default="unresolved", index=True)
     # workflow state: {phase, attempts, rejected_refs, original_problem}
     state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    mode: Mapped[str] = mapped_column(String(16), default="support")  # support | teach (a user teaching the assistant)
     created_at: Mapped[datetime] = _now()
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=_utcnow, onupdate=_utcnow)
 
@@ -154,3 +155,62 @@ class TurnEvent(Base):
     sources: Mapped[list[Any]] = mapped_column(JSONB, default=list)  # distinct kinds actually used (incl. docker/ci)
     web_event: Mapped[str] = mapped_column(String(16), default="none")  # none | cache_hit | coalesced | fresh | failed
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class AppSetting(Base):
+    """Admin-editable runtime switches (web search, GitHub docs, answer cache)."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=_utcnow)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class Lesson(Base):
+    """Knowledge a user taught the assistant in a teaching chat. Only active after an admin approves it."""
+
+    __tablename__ = "lessons"
+
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    applies_when: Mapped[str] = mapped_column(Text, default="")
+    instruction: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending | approved | rejected
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    review_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = _now()
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped[User] = relationship(lazy="joined")
+
+
+class ContainerGrant(Base):
+    """Per-user permission on a container (exact name or glob). level: logs (inspect + read logs) | actions (also start/stop/restart)."""
+
+    __tablename__ = "container_grants"
+
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    container: Mapped[str] = mapped_column(String(64))
+    level: Mapped[str] = mapped_column(String(16), default="logs")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = _now()
+
+
+class ContainerAudit(Base):
+    """Every container action attempt (allowed or denied) made through the UI."""
+
+    __tablename__ = "container_audit"
+
+    id: Mapped[uuid.UUID] = _pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    container: Mapped[str] = mapped_column(String(64))
+    action: Mapped[str] = mapped_column(String(16))
+    result: Mapped[str] = mapped_column(String(300), default="")  # ok | denied | error: ...
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    user: Mapped[User] = relationship(lazy="joined")

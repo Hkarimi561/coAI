@@ -13,6 +13,7 @@ from app.models import Document, User
 from app.redaction import redact
 from app.redis_client import get_redis
 from app.security import get_current_user
+from app.services import settings_store
 from app.services.ci import get_ci
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.docker_inspector import DockerError, get_docker
@@ -65,8 +66,12 @@ async def _llm() -> tuple[bool, str]:
 async def _web() -> tuple[bool | None, str]:
     s = get_settings()
     ws = get_websearch()
-    if not ws.enabled:
-        return None, "disabled (WEBSEARCH_PROVIDER=none or missing API key)"
+    web_on = ws.web_provider is not None and await settings_store.get_bool("web_search_enabled")
+    gh_on = await settings_store.get_bool("github_docs_enabled")
+    if not web_on and not gh_on:
+        return None, "disabled (admin settings or WEBSEARCH_PROVIDER=none)"
+    if not web_on:
+        return True, "web search off - GitHub project docs only"
     if s.websearch_provider == "searxng":
         try:
             async with httpx.AsyncClient(timeout=5) as c:

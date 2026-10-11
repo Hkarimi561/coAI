@@ -14,12 +14,13 @@ export interface Conversation {
   id: string;
   title: string;
   status: ConversationStatus;
+  mode: "support" | "teach";
   phase: Phase;
   created_at: string;
   updated_at: string;
 }
 
-export type CitationKind = "doc" | "solution" | "web" | "docker" | "ci";
+export type CitationKind = "doc" | "lesson" | "solution" | "github" | "web" | "docker" | "ci";
 
 export interface Citation {
   n: number;
@@ -218,4 +219,46 @@ export interface Analytics {
   };
   conversations_per_day: { date: string; conversations: number }[];
   top_signatures: { signature: string; text: string; occurrences: number; conversations: number; last_seen: string }[];
+}
+
+export type LessonStatus = "pending" | "approved" | "rejected";
+
+export interface Lesson {
+  id: string;
+  conversation_id: string;
+  title: string;
+  applies_when: string;
+  instruction: string;
+  status: LessonStatus;
+  review_note: string;
+  created_at: string;
+  reviewed_at: string | null;
+  user?: { id: string; email: string; name: string } | null;
+}
+
+export type ContainerLevel = "logs" | "actions";
+export type ContainerAction = "start" | "stop" | "restart";
+
+export interface ContainerInfo {
+  name: string;
+  image: string | null;
+  state: string | null;
+  status: string | null;
+  level: ContainerLevel;
+}
+
+export interface ContainerPermissions {
+  enabled: boolean;
+  error: string | null;
+  containers: { name: string; image: string | null; state: string | null }[];
+  users: { id: string; email: string; name: string; role: "admin" | "user"; is_active: boolean; grants: { container: string; level: ContainerLevel }[] }[];
+}
+
+export interface ContainerAuditRow {
+  id: string;
+  user: { email: string; name: string };
+  container: string;
+  action: string;
+  result: string;
+  created_at: string;
 }

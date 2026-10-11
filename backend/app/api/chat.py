@@ -11,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import SessionLocal, get_session
-from app.models import Conversation, Message, User
+from app.models import Conversation, Lesson, Message, User
 from app.redis_client import get_redis, rate_limit
-from app.schemas import ConversationOut, FeedbackIn, FeedbackOut, MessageOut, SendMessageIn
+from app.schemas import ConversationOut, CreateConversationIn, FeedbackIn, FeedbackOut, LessonOut, MessageOut, SendMessageIn
 from app.security import get_current_user
 from app.services.chat_service import run_turn, submit_feedback
+from app.services.lessons import submit_lesson
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 _background: set[asyncio.Task] = set()  # keep strong refs so turns finish even if the client disconnects
@@ -39,8 +40,11 @@ async def list_conversations(user: User = Depends(get_current_user), session: As
 
 
 @router.post("/conversations", response_model=ConversationOut, status_code=201)
-async def create_conversation(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> ConversationOut:
-    convo = Conversation(user_id=user.id, title="", state={"phase": "idle"})
+async def create_conversation(
+    body: CreateConversationIn | None = None, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> ConversationOut:
+    mode = body.mode if body else "support"
+    convo = Conversation(user_id=user.id, title="", state={"phase": "idle"}, mode=mode)
     session.add(convo)
     await session.commit()
     await session.refresh(convo)
@@ -88,7 +92,8 @@ async def send_message(
 
     async def runner() -> None:
         try:
-            await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit)
+            await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit,
+                           user_id=user.id, is_admin=user.role == "admin")
         finally:
             if await redis.get(lock_key) == token:
                 await redis.delete(lock_key)
@@ -127,3 +132,21 @@ async def feedback(
     new_msg = await submit_feedback(session, user, convo, body.message_id, body.outcome, body.note)
     await session.refresh(convo)
     return FeedbackOut(conversation=ConversationOut.of(convo), message=MessageOut.of(new_msg) if new_msg else None)
+
+
+@router.post("/conversations/{conversation_id}/lessons", response_model=LessonOut, status_code=201)
+async def submit_conversation_lesson(
+    conversation_id: uuid.UUID, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> LessonOut:
+    """Send what the user taught the assistant in this teaching chat to the admins for verification."""
+    convo = await get_owned_conversation(session, user, conversation_id)
+    if convo.user_id != user.id:
+        raise HTTPException(403, "Only the conversation owner can submit lessons")
+    lesson = await submit_lesson(session, user, convo)
+    return LessonOut.of(lesson)
+
+
+@router.get("/lessons", response_model=list[LessonOut])
+async def my_lessons(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> list[LessonOut]:
+    rows = (await session.execute(select(Lesson).where(Lesson.user_id == user.id).order_by(Lesson.created_at.desc()).limit(200))).scalars().all()
+    return [LessonOut.of(r) for r in rows]

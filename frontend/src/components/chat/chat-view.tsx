@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, RefreshCw, XCircle } from "lucide-react";
+import { CheckCircle2, GraduationCap, RefreshCw, Send, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -27,12 +27,13 @@ interface Live {
 
 const EXAMPLES = ["چطور Nginx را ریستارت کنم؟", "آخرین خطای کانتینر X چیست؟", "چرا آخرین بیلد شکست خورد؟"];
 
-export function ChatView({ conversationId }: { conversationId: string | null }) {
+export function ChatView({ conversationId, mode = "support" }: { conversationId: string | null; mode?: "support" | "teach" }) {
   const qc = useQueryClient();
   const router = useRouter();
   const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [draft, setDraft] = useState("");
+  const [submitted, setSubmitted] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const detail = useQuery({
@@ -79,6 +80,15 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [detail.data?.messages.length, live?.text, live?.user]);
 
+  const teach = (detail.data?.conversation.mode ?? mode) === "teach";
+  const submitLesson = useMutation({
+    mutationFn: () => api.post<{ title: string }>(`/chat/conversations/${conversationId}/lessons`),
+    onSuccess: async (l) => {
+      setSubmitted(l.title);
+      await Promise.all([qc.invalidateQueries({ queryKey: ["lessons"] }), qc.invalidateQueries({ queryKey: ["conversation", conversationId] })]);
+    },
+  });
+
   const feedback = useMutation({
     mutationFn: (v: { messageId: string; outcome: "confirmed" | "rejected" }) =>
       api.post<{ conversation: Conversation; message: Message | null }>(`/chat/conversations/${conversationId}/feedback`, {
@@ -96,7 +106,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
     setDraft("");
     if (!conversationId) {
       try {
-        const c = await api.post<Conversation>("/chat/conversations");
+        const c = await api.post<Conversation>("/chat/conversations", { mode: teach ? "teach" : "support" });
         setPendingMessage(c.id, content);
         await qc.invalidateQueries({ queryKey: ["conversations"] });
         router.replace(`/chat/${c.id}`);
@@ -121,12 +131,14 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
         <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
           {empty ? (
             <div className="space-y-4 pt-16 text-center">
-              <h2 className="text-2xl font-bold">چه مشکلی دارید؟</h2>
+              <h2 className="text-2xl font-bold">{teach ? "به دستیار چیزی یاد بدهید" : "چه مشکلی دارید؟"}</h2>
               <p className="text-sm text-muted-foreground">
-                سؤال خود را بپرسید یا خطای build، deployment یا کانتینر را مستقیماً اینجا بچسبانید. ابتدا مستندات تأییدشده‌ی تیم بررسی می‌شود.
+                {teach
+                  ? "یک روش، قانون یا نکته‌ی مربوط به زیرساخت تیم را توضیح دهید. دستیار برداشت خود را بازگو می‌کند و سؤال می‌پرسد؛ سپس آن را برای تأیید ادمین بفرستید."
+                  : "سؤال خود را بپرسید یا خطای build، deployment یا کانتینر را مستقیماً اینجا بچسبانید. ابتدا مستندات تأییدشده‌ی تیم بررسی می‌شود."}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
-                {EXAMPLES.map((ex) => (
+                {(teach ? [] : EXAMPLES).map((ex) => (
                   <button key={ex} type="button" onClick={() => setDraft(ex)} className="rounded-full border border-border bg-card px-3 py-1.5 text-sm hover:bg-muted">
                     {ex}
                   </button>
@@ -138,7 +150,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
           {detail.isLoading && conversationId ? <Spinner className="mx-auto" /> : null}
           {detail.error ? <ErrorBanner error={detail.error} /> : null}
 
-          {detail.data?.memory ? <MemoryPanel memory={detail.data.memory} /> : null}
+          {!teach && detail.data?.memory ? <MemoryPanel memory={detail.data.memory} /> : null}
 
           {messages.map((m) => (
             <div key={m.id} className="space-y-2">
@@ -188,6 +200,25 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
       <div className="border-t border-border bg-card p-3">
         <div className="mx-auto max-w-3xl space-y-2">
           <SystemStatusBar />
+          {teach ? (
+            <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
+              <div className="flex items-center gap-2 font-medium">
+                <GraduationCap className="h-4 w-4 text-primary" /> حالت آموزش
+              </div>
+              <p className="text-muted-foreground">
+                هر چه یاد می‌دهید تا زمانی که ادمین آن را تأیید نکند فعال نمی‌شود. وقتی از برداشت دستیار راضی بودید، آن را ارسال کنید.
+              </p>
+              {submitted ? (
+                <p className="text-success" role="status">
+                  «{submitted}» برای تأیید ادمین ارسال شد. می‌توانید در همین گفتگو مورد بعدی را آموزش دهید.
+                </p>
+              ) : null}
+              <ErrorBanner error={submitLesson.error} />
+              <Button size="sm" disabled={!conversationId || !messages.some((m) => m.role === "user") || !!live || submitLesson.isPending} onClick={() => { setSubmitted(null); submitLesson.mutate(); }}>
+                {submitLesson.isPending ? <Spinner /> : <Send className="h-4 w-4 rtl:-scale-x-100" />} ارسال برای تأیید ادمین
+              </Button>
+            </div>
+          ) : null}
           {phase === "awaiting_error" && !live ? (
             <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning" role="status">
               لطفاً خطا یا خروجی جدید را در کادر زیر بچسبانید؛ جستجوی بعدی با اطلاعات تازه و بدون تکرار پیشنهادهای ناموفق انجام می‌شود.
@@ -198,7 +229,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
             onChange={setDraft}
             onSubmit={() => void submit()}
             busy={!!live}
-            placeholder={phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}
+            placeholder={teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}
           />
           <p className="text-center text-[11px] text-muted-foreground">
             اسرار و توکن‌ها پیش از ذخیره و ارسال به مدل به‌صورت خودکار حذف می‌شوند. دستیار فقط‌خواندنی است و هیچ دستوری اجرا نمی‌کند.

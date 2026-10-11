@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Conversation, Feedback, ToolCall, TurnEvent, WebCacheEntry
 
-SOURCE_KEYS = ["local_docs", "solutions", "web_cache", "web_fresh", "docker", "ci"]
+SOURCE_KEYS = ["local_docs", "lessons", "solutions", "github", "web_cache", "web_fresh", "docker", "ci"]
 
 
 async def compute(session: AsyncSession, days: int = 30) -> dict[str, Any]:

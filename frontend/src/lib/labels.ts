@@ -6,9 +6,14 @@ export const STATUS_LABEL: Record<ConversationStatus, string> = {
   resolved: "حل‌شده",
 };
 
+export const LESSON_LABEL = { pending: "در انتظار تأیید ادمین", approved: "تأییدشده و فعال", rejected: "ردشده" } as const;
+export const LESSON_TONE = { pending: "warning", approved: "success", rejected: "danger" } as const;
+
 export const STATUS_TONE = { unresolved: "neutral", pending_review: "warning", resolved: "success" } as const;
 
 export const SOURCE_LABEL: Record<string, string> = {
+  lessons: "آموزش تأییدشده",
+  github: "مستندات GitHub",
   local_docs: "مستندات داخلی",
   solutions: "راه‌حل تأییدشده",
   web_cache: "کش وب",
@@ -19,6 +24,8 @@ export const SOURCE_LABEL: Record<string, string> = {
 };
 
 export const SOURCE_COLOR: Record<string, string> = {
+  lessons: "#db2777",
+  github: "#475569",
   local_docs: "#2563eb",
   solutions: "#7c3aed",
   web_cache: "#0891b2",
@@ -28,6 +35,8 @@ export const SOURCE_COLOR: Record<string, string> = {
 };
 
 export const CITATION_LABEL: Record<CitationKind, string> = {
+  lesson: "آموزش تأییدشده",
+  github: "مستندات GitHub",
   doc: "مستند داخلی",
   solution: "راه‌حل تأییدشده",
   web: "وب",

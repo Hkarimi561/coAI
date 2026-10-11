@@ -18,13 +18,15 @@ import hashlib
 import logging
 import re
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import get_settings
 from app.redaction import redact
-from app.services import answer_cache, memory
+from app.db import SessionLocal
+from app.services import answer_cache, container_access, memory, settings_store
 from app.services.ci import CIError, get_ci, render_runs
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.docker_inspector import DockerError, get_docker
@@ -72,7 +74,7 @@ MARKER_RULE = (
     f"{NO_ANSWER_MARK} and nothing else (the platform will then search the web for you)."
 )
 
-_KIND_TO_SOURCE = {"doc": "local_docs", "solution": "solutions", "docker": "docker", "ci": "ci"}
+_KIND_TO_SOURCE = {"doc": "local_docs", "lesson": "lessons", "solution": "solutions", "docker": "docker", "ci": "ci", "github": "github"}
 
 
 @dataclass
@@ -117,6 +119,8 @@ class TurnState:
     refs: list[str] = field(default_factory=list)
     llm_error: str | None = None
     force_web: bool = False
+    user_id: str | None = None
+    is_admin: bool = False
     refresh: bool = False  # user explicitly asked to search again: bypass the answer cache and the web cache
     cacheable: bool = False
     cache_key: str | None = None
@@ -150,13 +154,18 @@ class TroubleshootingWorkflow:
         if docker.enabled:
             t0 = time.monotonic()
             try:
-                found, refused = await docker.match_in_text(st.message)
+                scope: list[str] | None = None
+                if not st.is_admin:  # per-user permissions: only containers this user was granted (logs or actions)
+                    async with SessionLocal() as s:
+                        scope = list((await container_access.access_map_for_user_id(
+                            s, uuid.UUID(st.user_id or "0" * 32), await docker.allowed_names())).keys())
+                found, refused = await docker.match_in_text(st.message, scope)
             except DockerError as exc:
                 found, refused = [], []
                 st.notes.append(f"Docker inspection is unavailable right now ({exc}). Ask the user to paste logs manually.")
                 st.record("docker_logs", {}, {"error": str(exc)}, "error", t0)
             for name in refused:
-                st.notes.append(f"Container '{name}' is not in the allow-list, so it was not inspected.")
+                st.notes.append(f"Container '{name}' is not available to this user (not allow-listed or no permission), so it was not inspected.")
                 st.record("docker_logs", {"container": name}, {"error": "not in allow-list"}, "skipped", t0)
             for name in found[:2]:
                 t1 = time.monotonic()
@@ -222,7 +231,7 @@ class TroubleshootingWorkflow:
         # answers built from live container / CI state must never be replayed; follow-ups need their history
         has_live = any(i.kind in ("docker", "ci") for i in st.items)
         st.cacheable = (
-            self.s.answer_cache_enabled and not has_live and st.convo_state.get("attempts", 0) == 0
+            await settings_store.get_bool("answer_cache_enabled") and not has_live and st.convo_state.get("attempts", 0) == 0
             and (sig.is_error or len(st.message) >= 20) and not followup
         )
         if st.cacheable:
@@ -260,7 +269,7 @@ class TroubleshootingWorkflow:
         excluded = list(st.convo_state.get("rejected_refs", []))
         try:
             [vec] = await get_embedder().embed([st.semantic_query], "query")
-            hits = await get_vectorstore().search(vec, ["doc"], self.s.retrieval_top_k, excluded)
+            hits = await get_vectorstore().search(vec, ["doc", "lesson"], self.s.retrieval_top_k, excluded)
         except Exception as exc:
             log.exception("local retrieval failed")
             st.notes.append("Internal documentation search failed; answer may lack internal sources.")
@@ -269,8 +278,10 @@ class TroubleshootingWorkflow:
 
         docs = [
             ContextItem(
-                kind="doc", title=h.payload.get("doc_title", ""), location=h.payload.get("heading"), path=h.payload.get("path"),
-                text=h.payload.get("text", ""), score=h.score, ref=h.payload.get("ref"),
+                kind=h.payload.get("kind", "doc"),
+                title=h.payload.get("doc_title") or h.payload.get("title", ""),
+                location=h.payload.get("heading") or ("آموزش تأییدشده توسط ادمین" if h.payload.get("kind") == "lesson" else None),
+                path=h.payload.get("path"), text=h.payload.get("text", ""), score=h.score, ref=h.payload.get("ref"),
             )
             for h in hits if h.score >= self.s.min_context_score
         ]
@@ -304,8 +315,9 @@ class TroubleshootingWorkflow:
         items: list[ContextItem] = []
         if entry.answer:
             items.append(ContextItem(kind="web", title="Previously synthesised research summary", text=entry.answer, origin=origin, ref=ref))
-        for r in entry.results[: self.s.websearch_max_results]:
-            items.append(ContextItem(kind="web", title=r.get("title") or r["url"], url=r["url"], text=r.get("snippet", ""), origin=origin, ref=ref))
+        for r in entry.results[: self.s.websearch_max_results + 4]:
+            kind = "github" if r.get("source") == "github" else "web"
+            items.append(ContextItem(kind=kind, title=r.get("title") or r["url"], url=r["url"], text=r.get("snippet", ""), origin=origin, ref=ref))
         return items
 
     async def node_retrieve_cache(self, st: TurnState, emit: Emit) -> str:
@@ -398,7 +410,7 @@ class TroubleshootingWorkflow:
     async def node_web_search(self, st: TurnState, emit: Emit) -> str:
         ws = get_websearch()
         st.web_attempted = True
-        if not ws.enabled:
+        if not await ws.is_enabled():
             st.notes.append("Live web search is disabled on this platform.")
             return "generate"
         sig = st.signature
@@ -434,7 +446,8 @@ class TroubleshootingWorkflow:
         blocks = []
         for n, it in enumerate(st.items, 1):
             kind = {"doc": "internal documentation", "solution": "previously confirmed solution", "docker": "container inspection",
-                    "ci": "CI status", "web": "web result (cached)" if it.origin == "cache" else "web result"}[it.kind]
+                    "ci": "CI status", "lesson": "lesson taught by a team member and verified by an admin",
+                    "github": "GitHub project documentation", "web": "web result (cached)" if it.origin == "cache" else "web result"}[it.kind]
             head = f"[{n}] ({kind}) {it.title}" + (f" — {it.location}" if it.location else "") + (f" — {it.url}" if it.url else "")
             limit = 6200 if it.kind == "docker" else 1600
             blocks.append(f"{head}\n\"\"\"\n{_neutralize(truncate_middle(it.text, limit))}\n\"\"\"")
@@ -468,7 +481,7 @@ class TroubleshootingWorkflow:
             self._finish(st, None)
             return None
         # If the model says the context is insufficient and the web has not been tried yet, search the web and answer again.
-        marker_mode = get_websearch().enabled and not st.web_attempted
+        marker_mode = await get_websearch().is_enabled() and not st.web_attempted
         chunks: list[str] = []
         head = ""  # replies starting with "[" are held back briefly to detect a "no answer" marker
         decided = not marker_mode

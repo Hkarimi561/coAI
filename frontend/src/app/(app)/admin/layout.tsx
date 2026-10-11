@@ -12,9 +12,12 @@ const TABS = [
   { href: "/admin", label: "داشبورد و آمار", exact: true },
   { href: "/admin/conversations", label: "گفتگوها" },
   { href: "/admin/documents", label: "مستندات" },
+  { href: "/admin/lessons", label: "آموزش‌ها" },
+  { href: "/admin/containers", label: "دسترسی کانتینرها" },
   { href: "/admin/cache", label: "کش جستجوی وب" },
   { href: "/admin/users", label: "کاربران" },
   { href: "/admin/status", label: "وضعیت سیستم" },
+  { href: "/admin/settings", label: "تنظیمات" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

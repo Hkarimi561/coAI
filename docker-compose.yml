@@ -60,6 +60,10 @@ services:
     environment:
       CONTAINERS: 1
       POST: 0
+      # Container start/stop/restart from the Containers page. Off by default; set DOCKER_PROXY_ALLOW_ACTIONS=1 in .env to enable.
+      ALLOW_START: ${DOCKER_PROXY_ALLOW_ACTIONS:-0}
+      ALLOW_STOP: ${DOCKER_PROXY_ALLOW_ACTIONS:-0}
+      ALLOW_RESTARTS: ${DOCKER_PROXY_ALLOW_ACTIONS:-0}
       IMAGES: 0
       NETWORKS: 0
       VOLUMES: 0
