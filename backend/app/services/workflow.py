@@ -57,6 +57,19 @@ NO_SOURCE_REPLY = (
 _BUILD_KW = re.compile(r"(?i)\b(build|pipeline|ci/cd|ci|github actions|workflow|deploy(?:ment)?|release)\b|بیلد|پایپ\s?لاین|دیپلوی|استقرار")
 _RECENT_KW = re.compile(r"(?i)\b(latest|last|recent|newest|why did)\b|آخرین|اخیر|چرا")
 
+# The user explicitly wants web research instead of internal docs ("search the web", "بگرد", "نمی‌خوام از داکیومنت ...")
+_FORCE_WEB = re.compile(
+    r"(?i)\b(search|google|look\s?up)\b.{0,25}\b(web|internet|online)\b|\b(on|from)\s+the\s+(web|internet)\b|\bgoogle it\b"
+    r"|(از|توی|تو|در)\s*(اینترنت|وب|گوگل)|سرچ|بگرد|جستجو\s?کن|نمی\s?خوا?م.{0,40}(داکیومنت|مستند)"
+)
+NO_ANSWER_MARK = "[[NO_ANSWER]]"
+# the model sometimes improvises variants such as [context_not_found]
+_NO_ANSWER_RE = re.compile(r"^\s*\[+\s*(no_answer|context_not_fo\w*|insufficient\w*|not_enough\w*)", re.I)
+MARKER_RULE = (
+    "\n10. If the context does not contain what is needed to answer the question, reply with exactly "
+    f"{NO_ANSWER_MARK} and nothing else (the platform will then search the web for you)."
+)
+
 _KIND_TO_SOURCE = {"doc": "local_docs", "solution": "solutions", "docker": "docker", "ci": "ci"}
 
 
@@ -101,6 +114,9 @@ class TurnState:
     sources: list[str] = field(default_factory=list)
     refs: list[str] = field(default_factory=list)
     llm_error: str | None = None
+    force_web: bool = False
+    web_attempted: bool = False
+    thoughts: list[str] = field(default_factory=list)
 
     def record(self, tool: str, inp: dict, out: dict, status: str, started: float) -> None:
         self.tool_calls.append(
@@ -185,11 +201,20 @@ class TroubleshootingWorkflow:
         else:
             st.semantic_query = st.message[:600]
         st.web_query = web_query_from(sig, st.message)
+        st.force_web = bool(_FORCE_WEB.search(st.message))
+        if st.force_web:
+            st.notes.append(
+                "The user explicitly asked for web research instead of internal documentation: answer from the web results "
+                "and say that the answer comes from the web."
+            )
         return "retrieve_local"
 
     # ------------------------------------------------------------- stage 1: docs
     async def node_retrieve_local(self, st: TurnState, emit: Emit) -> str:
         t0 = time.monotonic()
+        if st.force_web:
+            st.record("local_docs", {"query": st.semantic_query[:300]}, {"skipped": "user asked for web research"}, "skipped", t0)
+            return "retrieve_cache"
         excluded = list(st.convo_state.get("rejected_refs", []))
         try:
             [vec] = await get_embedder().embed([st.semantic_query], "query")
@@ -260,6 +285,10 @@ class TroubleshootingWorkflow:
                 st.record("web_cache", {"key": sig.key}, out, "ok", t0)
                 return "generate"
 
+        if st.force_web:  # exact cached research is still reused, but nothing else may short-circuit the web search
+            st.record("web_cache", {"key": sig.key}, out, "ok", t0)
+            return "web_search"
+
         # (b) semantic lookup over confirmed solutions and cached research
         try:
             [vec] = await get_embedder().embed([st.semantic_query], "query")
@@ -303,14 +332,38 @@ class TroubleshootingWorkflow:
         return "web_search"
 
     # ---------------------------------------------------------- stage 3: live web
+    async def _english_query(self, st: TurnState, default: str) -> str:
+        """Persian / free-form requests make poor web queries: let the LLM rewrite them into a short English one."""
+        if (st.signature and st.signature.is_error) or default.isascii():
+            return default
+        try:
+            out = await get_llm().complete(
+                [
+                    {
+                        "role": "system",
+                        "content": "Rewrite the user's request as ONE short English web search query (max 12 words) "
+                        "for a technical search engine. Output only the query, no quotes, no explanation.",
+                    },
+                    {"role": "user", "content": truncate_middle(st.message, 800)},
+                ],
+                max_tokens=120,
+            )
+        except LLMError:
+            return default
+        lines = [ln for ln in out.strip().splitlines() if ln.strip()]
+        return redact(lines[0].strip(" \"'`*"))[:200] if lines else default
+
     async def node_web_search(self, st: TurnState, emit: Emit) -> str:
         ws = get_websearch()
+        st.web_attempted = True
         if not ws.enabled:
             st.notes.append("Live web search is disabled on this platform.")
             return "generate"
         sig = st.signature
         assert sig is not None
         key, query = sig.key, st.web_query
+        if f"web:{key}" not in st.convo_state.get("rejected_refs", []) and await ws.lookup(key) is None:
+            query = await self._english_query(st, query)  # only worth an LLM call when a real outbound search will happen
         if f"web:{key}" in st.convo_state.get("rejected_refs", []):
             # the cached research for this exact problem already failed for this user: search again with a different query
             key = hashlib.sha256(f"{key}|retry{st.convo_state.get('attempts', 0)}".encode()).hexdigest()[:32]
@@ -335,7 +388,7 @@ class TroubleshootingWorkflow:
         return "generate"
 
     # ---------------------------------------------------------------- generate
-    def _build_messages(self, st: TurnState) -> list[dict[str, str]]:
+    def _build_messages(self, st: TurnState, marker_mode: bool = False) -> list[dict[str, str]]:
         blocks = []
         for n, it in enumerate(st.items, 1):
             kind = {"doc": "internal documentation", "solution": "previously confirmed solution", "docker": "container inspection",
@@ -357,34 +410,52 @@ class TroubleshootingWorkflow:
                 + "\n---\n".join(failed[-3:]) + "\n</previous_failed_attempts>"
             )
         parts.append(f"User message:\n{truncate_middle(st.message, 6000)}")
-        return [{"role": "system", "content": SYSTEM_PROMPT}, *st.history, {"role": "user", "content": "\n\n".join(parts)}]
+        return [{"role": "system", "content": SYSTEM_PROMPT + (MARKER_RULE if marker_mode else "")}, *st.history, {"role": "user", "content": "\n\n".join(parts)}]
 
-    async def node_generate(self, st: TurnState, emit: Emit) -> None:
+    async def node_generate(self, st: TurnState, emit: Emit) -> str | None:
         if not st.items:
             st.answer = NO_SOURCE_REPLY
             await emit("token", {"text": st.answer})
             self._finish(st, None)
-            return
+            return None
+        # If the model says the context is insufficient and the web has not been tried yet, search the web and answer again.
+        marker_mode = get_websearch().enabled and not st.web_attempted
         chunks: list[str] = []
-        thoughts: list[str] = []
+        head = ""  # replies starting with "[" are held back briefly to detect a "no answer" marker
+        decided = not marker_mode
         try:
-            async for channel, piece in get_llm().stream(self._build_messages(st)):
+            async for channel, piece in get_llm().stream(self._build_messages(st, marker_mode)):
                 if channel == "think":
-                    thoughts.append(piece)
+                    st.thoughts.append(piece)
                     await emit("thinking", {"text": piece})
-                else:
-                    chunks.append(piece)
-                    await emit("token", {"text": piece})
+                    continue
+                if not decided:
+                    head += piece
+                    probe = head.lstrip()
+                    if len(probe) < 24 and (not probe or probe.startswith("[")):
+                        continue
+                    decided = True
+                    if _NO_ANSWER_RE.match(probe):
+                        return "web_search"
+                    piece, head = head, ""
+                chunks.append(piece)
+                await emit("token", {"text": piece})
+            if not decided:  # stream ended while still undecided (very short reply)
+                if _NO_ANSWER_RE.match(head.lstrip()):
+                    return "web_search"
+                chunks.append(head)
+                await emit("token", {"text": head})
         except LLMError as exc:
             st.llm_error = str(exc)
             log.error("LLM failure: %s", exc)
             if not chunks:
                 fallback = "⚠️ مدل زبانی در دسترس نیست. مرتبط‌ترین منابع پیدا شده:\n\n" + "\n".join(
-                    f"- **{i.title}**" + (f" — {i.location}" if i.location else "") + (f" ({i.url})" if i.url else "") for i in st.items[:6]
+                    f"- **{i.title}**" + (f" — {i.location}" if i.location else "") + (f" ({i.url})" if i.url else "")
+                    for i in st.items[:6]
                 )
                 chunks.append(fallback)
                 await emit("token", {"text": fallback})
-        st.thinking = redact("".join(thoughts)).strip()[:30000]
+        st.thinking = redact("".join(st.thoughts)).strip()[:30000]
         st.answer = redact("".join(chunks)).strip()
         self._finish(st, set(int(n) for n in re.findall(r"\[(\d{1,2})\]", st.answer)))
         if st.web_event == "fresh" and st.web_key and st.answer and not st.llm_error:
@@ -392,6 +463,7 @@ class TroubleshootingWorkflow:
                 await get_websearch().set_answer(st.web_key, st.answer)
             except Exception:
                 log.exception("Could not store synthesised answer in web cache")
+        return None
 
     def _finish(self, st: TurnState, cited: set[int] | None) -> None:
         cited = cited or set()
