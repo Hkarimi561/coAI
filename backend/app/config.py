@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     solution_sufficiency_score: float = 0.82
     web_cache_sufficiency_score: float = 0.82
 
+    # --- Chat answer cache ---
+    answer_cache_enabled: bool = True
+    answer_cache_ttl_hours: int = 24
+
     # --- Web search -------------------------------------------------------
     websearch_provider: str = "searxng"  # "searxng" | "tavily" | "none"
     searxng_url: str = "http://searxng:8080"

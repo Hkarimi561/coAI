@@ -19,6 +19,7 @@ from app.db import SessionLocal
 from app.models import WebCacheEntry
 from app.redaction import redact
 from app.redis_client import get_redis
+from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_vectorstore
 
 log = logging.getLogger(__name__)
@@ -192,6 +193,19 @@ class WebSearchService:
             entry.answer = answer
             await self.redis.set(self._rkey(key), entry.dumps(), ex=3600)
 
+    async def invalidate_key(self, key: str) -> None:
+        """Drop a cache entry (used by an explicit user-requested re-search)."""
+        async with SessionLocal() as session:
+            await session.execute(
+                update(WebCacheEntry).where(WebCacheEntry.cache_key == key).values(invalidated_at=datetime.now(UTC))
+            )
+            await session.commit()
+        await self.redis.delete(self._rkey(key))
+        try:
+            await get_vectorstore().delete_where(kind="web", ref=f"web:{key}")
+        except Exception:
+            log.exception("Failed to remove cache vector for %s", key)
+
     async def invalidate(self, entry_id: uuid.UUID, admin_id: uuid.UUID) -> bool:
         async with SessionLocal() as session:
             row = await session.get(WebCacheEntry, entry_id)
@@ -206,6 +220,7 @@ class WebSearchService:
             await get_vectorstore().delete_where(kind="web", ref=f"web:{key}")
         except Exception:
             log.exception("Failed to remove cache vector for %s", key)
+        await bump_kb_version()
         return True
 
     async def _store(self, key: str, query: str, signature: str, results: list[SearchResult]) -> CachedWeb:
@@ -256,7 +271,7 @@ class WebSearchService:
             log.exception("Could not index web cache entry %s (semantic lookup disabled for it)", entry.cache_key)
 
     # -- single-flight search --------------------------------------------
-    async def search(self, key: str, query: str, signature: str) -> tuple[CachedWeb, str]:
+    async def search(self, key: str, query: str, signature: str, refresh: bool = False) -> tuple[CachedWeb, str]:
         """Returns (entry, event) with event in cache_hit | coalesced | fresh.
 
         Exactly one concurrent caller performs the outbound request for a given key (Redis lock);
@@ -264,6 +279,8 @@ class WebSearchService:
         """
         if not self.provider:
             raise WebSearchError("Web search is not configured")
+        if refresh:  # explicit user request: forget the cached research first, then search for real
+            await self.invalidate_key(key)
         lock_key, err_key = f"sf:lock:{key}", f"sf:err:{key}"
         deadline = asyncio.get_running_loop().time() + self.s.single_flight_wait_s
         waited = False

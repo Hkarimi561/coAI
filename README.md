@@ -202,6 +202,9 @@ cd frontend && npm install && BACKEND_URL=http://localhost:8000 npm run dev
 
 ## Scope notes
 
+* **Session memory:** every conversation keeps its own memory (`Conversation.state.memory`): the current problem, a timeline of each answer with its outcome (pending / solved / failed), an LLM-written rolling summary (refreshed in the background after each answer) and a suggested *next step*. It is shown at the top of the chat, injected into the prompt as `<session_memory>`, and used to ground short follow-up questions ("and now what?").
+* **Answer cache:** repeated questions are answered instantly from Redis (`ANSWER_CACHE_TTL_HOURS`, default 24h). Not cached: answers built from live Docker/CI data, follow-ups, "no answer" replies, failed searches, rejected answers. Any change to docs, confirmed solutions or the web cache invalidates all cached answers. The **Search again** button (or typing "دوباره جستجو کن") bypasses both caches, runs a real web search and replaces the cached answer.
+
 * **Reasoning output:** the model's thinking (`<think>` blocks, Ollama `thinking`, LM Studio `reasoning_content`) streams into a collapsible panel above each answer and is stored with the message.
 * **Theme & direction:** the header has a dark/light toggle (animated circular reveal) and an RTL/LTR switch; both are remembered per browser.
 

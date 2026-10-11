@@ -1,12 +1,13 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { Composer } from "@/components/chat/composer";
+import { MemoryPanel } from "@/components/chat/memory-panel";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { SystemStatusBar } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
@@ -38,18 +39,25 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
     queryKey: ["conversation", conversationId],
     queryFn: () => api.get<ConversationDetail>(`/chat/conversations/${conversationId}`),
     enabled: !!conversationId,
+    // the session memory summary is refreshed by the backend a few seconds after each answer
+    refetchInterval: (q) => (q.state.data?.memory?.updating ? 3000 : false),
   });
 
   const send = useCallback(
-    async (id: string, content: string) => {
+    async (id: string, content: string, refresh = false) => {
       setError(null);
       setLive({ user: content, text: "", thinking: "", step: null });
       try {
-        await streamMessage(id, content, {
+        await streamMessage(
+          id,
+          content,
+          {
           onStatus: (step) => setLive((l) => (l ? { ...l, step } : l)),
           onThinking: (t) => setLive((l) => (l ? { ...l, thinking: l.thinking + t } : l)),
           onToken: (t) => setLive((l) => (l ? { ...l, text: l.text + t } : l)),
-        });
+          },
+          refresh,
+        );
       } catch (e) {
         setError(e);
       } finally {
@@ -103,6 +111,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
 
   const messages = detail.data?.messages ?? [];
   const phase = detail.data?.conversation.phase;
+  const lastUserContent = [...messages].reverse().find((m) => m.role === "user")?.content;
   const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
   const empty = !messages.length && !live;
 
@@ -129,6 +138,8 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
           {detail.isLoading && conversationId ? <Spinner className="mx-auto" /> : null}
           {detail.error ? <ErrorBanner error={detail.error} /> : null}
 
+          {detail.data?.memory ? <MemoryPanel memory={detail.data.memory} /> : null}
+
           {messages.map((m) => (
             <div key={m.id} className="space-y-2">
               <MessageBubble message={m} />
@@ -140,6 +151,13 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
                   </Button>
                   <Button variant="dangerOutline" size="sm" disabled={feedback.isPending} onClick={() => feedback.mutate({ messageId: m.id, outcome: "rejected" })}>
                     <XCircle className="h-4 w-4" /> با خطا مواجه شدم (رد)
+                  </Button>
+                </div>
+              ) : null}
+              {m.id === lastAssistantId && !live && !m.meta.kind && lastUserContent && conversationId ? (
+                <div className="ps-11">
+                  <Button variant="ghost" size="sm" onClick={() => void send(conversationId, lastUserContent, true)} title="کش را نادیده می‌گیرد و دوباره در وب جستجو می‌کند">
+                    <RefreshCw className="h-3.5 w-3.5" /> جستجوی دوباره
                   </Button>
                 </div>
               ) : null}

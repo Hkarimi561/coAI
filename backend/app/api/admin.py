@@ -91,6 +91,7 @@ async def inspect_conversation(conversation_id: uuid.UUID, session: AsyncSession
         "conversation": ConversationOut.of(convo),
         "user": {"id": str(convo.user.id), "email": convo.user.email, "name": convo.user.name},
         "messages": [MessageOut.of(m) for m in messages],
+        "memory": (convo.state or {}).get("memory"),
         "tool_calls": [
             {"id": str(t.id), "message_id": str(t.message_id) if t.message_id else None, "tool": t.tool, "input": t.input,
              "output": t.output, "status": t.status, "duration_ms": t.duration_ms, "created_at": t.created_at}

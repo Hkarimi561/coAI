@@ -20,6 +20,7 @@ from app.models import Document
 from app.redaction import redact
 from app.redis_client import get_redis
 from app.services.chunker import chunk_markdown, parse_document
+from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_vectorstore
 
 log = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ async def index_content(session: AsyncSession, rel_path: str, raw: str, source: 
     if source != "imported" or doc.source is None:
         doc.source = source
     await session.commit()
+    await bump_kb_version()
     return doc
 
 
@@ -151,6 +153,7 @@ async def remove_document(session: AsyncSession, doc: Document) -> None:
         full.unlink()
     await session.delete(doc)
     await session.commit()
+    await bump_kb_version()
 
 
 async def sync_directory(force: bool = False) -> SyncReport:

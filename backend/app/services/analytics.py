@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Conversation, Feedback, TurnEvent, WebCacheEntry
+from app.models import Conversation, Feedback, ToolCall, TurnEvent, WebCacheEntry
 
 SOURCE_KEYS = ["local_docs", "solutions", "web_cache", "web_fresh", "docker", "ci"]
 
@@ -64,6 +64,14 @@ async def compute(session: AsyncSession, days: int = 30) -> dict[str, Any]:
     cache_total = (await session.execute(select(func.count(WebCacheEntry.id)).where(WebCacheEntry.invalidated_at.is_(None)))).scalar_one()
     cache_hits_total = (await session.execute(select(func.coalesce(func.sum(WebCacheEntry.hit_count), 0)))).scalar_one()
 
+    answer_cache_hits = (
+        await session.execute(
+            select(func.count(ToolCall.id)).where(
+                ToolCall.tool == "answer_cache", ToolCall.created_at >= since, ToolCall.output["hit"].astext == "true"
+            )
+        )
+    ).scalar_one()
+
     return {
         "days": days,
         "totals": {
@@ -83,6 +91,7 @@ async def compute(session: AsyncSession, days: int = 30) -> dict[str, Any]:
             "failed": web_events["failed"],
             "cache_entries": cache_total,
             "cache_hits_total": int(cache_hits_total),
+            "answer_cache_hits": int(answer_cache_hits),
         },
         "conversations_per_day": series,
         "top_signatures": [

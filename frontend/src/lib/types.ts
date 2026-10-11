@@ -42,6 +42,8 @@ export interface MessageMeta {
   kind?: string;
   notes?: string[];
   thinking?: string;
+  answer_cache?: "hit";
+  refreshed?: boolean;
   llm_error?: string;
   [key: string]: unknown;
 }
@@ -55,9 +57,26 @@ export interface Message {
   created_at: string;
 }
 
+export interface MemoryTurn {
+  n: number;
+  user: string;
+  assistant: string;
+  source: string;
+  outcome: "pending" | "confirmed" | "rejected" | "info";
+}
+
+export interface Memory {
+  problem: string;
+  summary?: string;
+  next_step: string;
+  timeline: MemoryTurn[];
+  updating?: boolean;
+}
+
 export interface ConversationDetail {
   conversation: Conversation;
   messages: Message[];
+  memory?: Memory | null;
 }
 
 export interface AdminConversationRow extends Conversation {
@@ -195,6 +214,7 @@ export interface Analytics {
     failed: number;
     cache_entries: number;
     cache_hits_total: number;
+    answer_cache_hits: number;
   };
   conversations_per_day: { date: string; conversations: number }[];
   top_signatures: { signature: string; text: string; occurrences: number; conversations: number; last_seen: string }[];

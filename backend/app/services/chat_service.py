@@ -1,6 +1,7 @@
 """Persistence around the workflow: turns, feedback loop, candidate solutions."""
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -14,12 +15,18 @@ from app.db import SessionLocal
 from app.models import Conversation, Feedback, Message, Solution, ToolCall, TurnEvent, User
 from app.redaction import redact, redact_obj
 from app.schemas import MessageOut
+from app.services import answer_cache, memory
+from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_vectorstore
 from app.services.workflow import Emit, TroubleshootingWorkflow, TurnState
 from app.textnorm import truncate_middle
 
 log = logging.getLogger(__name__)
 _workflow = TroubleshootingWorkflow()
+_RESEARCH_RE = re.compile(
+    r"(?i)(دوباره|مجدد|باز\s?هم|re-?search|again|retry).{0,25}(جستجو|بگرد|سرچ|search)"
+    r"|(جستجو|بگرد|سرچ|search).{0,25}(دوباره|مجدد|again)"
+)
 
 ASK_FOR_ERROR = (
     "متوجه شدم، این راه‌حل جواب نداد. لطفاً **خطای جدید یا خروجی دستور** را همین‌جا بچسبانید "
@@ -33,10 +40,12 @@ def _history_for_llm(rows: list[Message]) -> list[dict[str, str]]:
     return [{"role": m.role, "content": truncate_middle(m.content, 1800)} for m in rows if m.meta.get("kind") != "request_error"]
 
 
-async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit) -> None:
+async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False) -> None:
     """Runs one user turn end-to-end. Never raises; failures are emitted as `error` events."""
     try:
         redacted = redact(content).strip()
+        short_research_request = len(redacted) < 80 and bool(_RESEARCH_RE.search(redacted))
+        refresh = refresh or short_research_request
         async with SessionLocal() as session:
             convo = await session.get(Conversation, conversation_id)
             assert convo is not None
@@ -46,10 +55,15 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit) -> N
                 )
             ).scalars().all()
             history = _history_for_llm(list(reversed(prev)))
+            # "search again" without a question means: redo the previous user question
+            effective = redacted
+            if short_research_request:
+                effective = next((m.content for m in prev if m.role == "user"), redacted)
 
             state: dict[str, Any] = dict(convo.state or {})
             if state.get("phase", "idle") == "idle" or not state.get("original_problem"):
-                state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": redacted[:1500]}
+                state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": effective[:1500],
+                         "memory": state.get("memory")}
             if not convo.title:
                 convo.title = redacted.strip().splitlines()[0][:80] if redacted.strip() else "گفتگوی جدید"
             user_msg = Message(conversation_id=conversation_id, role="user", content=redacted)
@@ -59,17 +73,20 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit) -> N
             await session.commit()
             await emit("user_message", MessageOut.of(user_msg).model_dump(mode="json"))
 
-        st = TurnState(conversation_id=str(conversation_id), message=redacted, history=history, convo_state=state)
+        st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh)
         await _workflow.run(st, emit)
 
         sig = st.signature
         meta = {
-            "awaiting_feedback": bool(st.items) and not st.llm_error,
+            "awaiting_feedback": (bool(st.items) or st.cache_hit) and not st.llm_error,
             "primary_source": st.primary_source,
             "web_event": st.web_event,
             "signature_key": sig.key if sig else None,
             "refs": st.refs,
             "notes": st.notes,
+            **({"answer_cache": "hit"} if st.cache_hit else {}),
+            **({"answer_cache_key": st.cache_key} if st.cache_key else {}),
+            **({"refreshed": True} if st.refresh else {}),
             **({"thinking": st.thinking} if st.thinking else {}),
             **({"llm_error": redact(st.llm_error)} if st.llm_error else {}),
         }
@@ -93,10 +110,15 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit) -> N
             new_state = dict(convo.state or {})
             if meta["awaiting_feedback"]:
                 new_state["phase"] = "awaiting_feedback"
+            new_state["memory"] = memory.add_turn(
+                new_state.get("memory"), problem=new_state.get("original_problem") or effective, user=effective,
+                assistant=st.answer, source="answer_cache" if st.cache_hit else st.primary_source, awaiting=meta["awaiting_feedback"],
+            )
             convo.state = new_state
             convo.updated_at = datetime.now(UTC)
             await session.commit()
             await emit("done", MessageOut.of(msg).model_dump(mode="json"))
+        memory.spawn_refresh(conversation_id)
     except Exception as exc:  # noqa: BLE001
         log.exception("Turn failed")
         await emit("error", {"message": redact(f"{type(exc).__name__}: {exc}")[:300]})
@@ -134,14 +156,17 @@ async def submit_feedback(
         await session.flush()
         fb.solution_id = sol.id
         convo.status = "pending_review"
-        convo.state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": None}
+        convo.state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": None,
+                       "memory": memory.set_outcome(state.get("memory"), "confirmed")}
         ack = Message(conversation_id=convo.id, role="assistant", content=CONFIRM_ACK, meta={"kind": "ack"})
         session.add(ack)
         await session.commit()
         await index_solution(sol)
+        await bump_kb_version()
         return ack
 
     # rejected: remember what failed, then ask for the new error output
+    await answer_cache.delete(msg.meta.get("answer_cache_key"))  # a rejected answer must not be replayed to anyone
     failed = list(state.get("failed_summaries", []))
     failed.append(truncate_middle(msg.content, 700))
     state.update(
@@ -149,6 +174,7 @@ async def submit_feedback(
         attempts=int(state.get("attempts", 0)) + 1,
         rejected_refs=sorted(set(state.get("rejected_refs", [])) | set(msg.meta.get("refs", []))),
         failed_summaries=failed[-3:],
+        memory=memory.set_outcome(state.get("memory"), "rejected"),
     )
     convo.state = state
     convo.status = "unresolved"
@@ -177,5 +203,6 @@ async def index_solution(sol: Solution) -> None:
 async def remove_solution_vector(solution_id: uuid.UUID) -> None:
     try:
         await get_vectorstore().delete_where(kind="solution", ref=f"sol:{solution_id}")
+        await bump_kb_version()
     except Exception:
         log.exception("Could not remove solution vector %s", solution_id)

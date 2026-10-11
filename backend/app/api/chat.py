@@ -55,7 +55,8 @@ async def get_conversation(
     msgs = (
         await session.execute(select(Message).where(Message.conversation_id == convo.id).order_by(Message.created_at, Message.id))
     ).scalars().all()
-    return {"conversation": ConversationOut.of(convo), "messages": [MessageOut.of(m) for m in msgs]}
+    return {"conversation": ConversationOut.of(convo), "messages": [MessageOut.of(m) for m in msgs],
+            "memory": (convo.state or {}).get("memory")}
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -87,7 +88,7 @@ async def send_message(
 
     async def runner() -> None:
         try:
-            await run_turn(conversation_id=conversation_id, content=body.content, emit=emit)
+            await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit)
         finally:
             if await redis.get(lock_key) == token:
                 await redis.delete(lock_key)

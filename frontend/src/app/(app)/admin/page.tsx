@@ -89,7 +89,7 @@ export default function AnalyticsPage() {
           hint={`${formatNumber(data.feedback.confirmed)} تأیید · ${formatNumber(data.feedback.rejected)} رد`}
         />
         <Kpi label="نرخ بهره‌گیری از کش وب" value={formatPercent(data.web.cache_hit_rate)} hint={`${formatNumber(data.web.cache_entries)} ورودی فعال در کش`} />
-        <Kpi label="جستجوی وب صرفه‌جویی‌شده" value={formatNumber(data.web.searches_avoided)} hint={`${formatNumber(data.web.searches_performed)} جستجوی واقعی`} />
+        <Kpi label="جستجوی وب صرفه‌جویی‌شده" value={formatNumber(data.web.searches_avoided)} hint={`${formatNumber(data.web.searches_performed)} جستجوی واقعی · ${formatNumber(data.web.answer_cache_hits)} پاسخ از کش گفتگو`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

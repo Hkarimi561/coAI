@@ -67,6 +67,7 @@ class ConversationOut(BaseModel):
 
 class SendMessageIn(BaseModel):
     content: str = Field(min_length=1, max_length=20000)
+    refresh: bool = False  # search again: skip the answer cache and cached web research
 
 
 class FeedbackIn(BaseModel):

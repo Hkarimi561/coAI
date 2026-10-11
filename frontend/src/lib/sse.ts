@@ -10,12 +10,12 @@ export interface StreamHandlers {
 }
 
 /** POSTs a chat message and consumes the Server-Sent Events response. Rejects on transport or server `error` events. */
-export async function streamMessage(conversationId: string, content: string, h: StreamHandlers): Promise<void> {
+export async function streamMessage(conversationId: string, content: string, h: StreamHandlers, refresh = false): Promise<void> {
   const res = await fetch(`/api/chat/conversations/${conversationId}/messages`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, refresh }),
   });
   if (!res.ok || !res.body) {
     let detail = res.statusText;

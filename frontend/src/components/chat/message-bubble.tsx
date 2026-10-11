@@ -41,6 +41,8 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
             {!streaming && meta.primary_source ? (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 <Badge tone="neutral">منبع اصلی: {SOURCE_LABEL[meta.primary_source] ?? meta.primary_source}</Badge>
+                {meta.answer_cache === "hit" ? <Badge tone="info">پاسخ از حافظه‌ی گفتگوها (جستجو انجام نشد)</Badge> : null}
+                {meta.refreshed ? <Badge tone="info">جستجوی دوباره انجام شد</Badge> : null}
                 {meta.web_event && meta.web_event !== "none" ? <Badge tone="neutral">{WEB_EVENT_LABEL[meta.web_event] ?? meta.web_event}</Badge> : null}
               </div>
             ) : null}
