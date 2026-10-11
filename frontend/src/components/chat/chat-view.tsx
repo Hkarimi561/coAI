@@ -1,16 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Send, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
+import { Composer } from "@/components/chat/composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { SystemStatusBar } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner, Spinner } from "@/components/ui/misc";
-import { Textarea } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { STEP_LABEL } from "@/lib/labels";
 import { takePendingMessage, setPendingMessage } from "@/lib/pending";
@@ -101,13 +101,6 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
     await send(conversationId, content);
   }
 
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      void submit();
-    }
-  }
-
   const messages = detail.data?.messages ?? [];
   const phase = detail.data?.conversation.phase;
   const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
@@ -182,22 +175,13 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
               لطفاً خطا یا خروجی جدید را در کادر زیر بچسبانید؛ جستجوی بعدی با اطلاعات تازه و بدون تکرار پیشنهادهای ناموفق انجام می‌شود.
             </p>
           ) : null}
-          <div className="flex items-end gap-2">
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKeyDown}
-              dir="auto"
-              rows={3}
-              disabled={!!live}
-              aria-label="پیام"
-              placeholder={phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید… (Enter ارسال، Shift+Enter خط جدید)"}
-              className="max-h-60 min-h-[5rem] resize-y font-mono text-[0.85rem]"
-            />
-            <Button onClick={() => void submit()} disabled={!draft.trim() || !!live} className="h-12" aria-label="ارسال">
-              {live ? <Spinner /> : <Send className="h-4 w-4 rtl:-scale-x-100" />} ارسال
-            </Button>
-          </div>
+          <Composer
+            value={draft}
+            onChange={setDraft}
+            onSubmit={() => void submit()}
+            busy={!!live}
+            placeholder={phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}
+          />
           <p className="text-center text-[11px] text-muted-foreground">
             اسرار و توکن‌ها پیش از ذخیره و ارسال به مدل به‌صورت خودکار حذف می‌شوند. دستیار فقط‌خواندنی است و هیچ دستوری اجرا نمی‌کند.
           </p>

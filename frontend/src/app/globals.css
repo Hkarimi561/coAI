@@ -80,6 +80,12 @@ body {
   @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
 }
 
+/* inputs that live inside a container which draws its own focus ring */
+[data-bare]:focus-visible {
+  box-shadow: none;
+  outline: none;
+}
+
 /* Terminal output, code and logs are always LTR even inside the RTL layout. */
 pre,
 code,
