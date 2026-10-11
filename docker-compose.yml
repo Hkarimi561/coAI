@@ -89,6 +89,9 @@ services:
       args:
         INSTALL_LOCAL_EMBEDDINGS: ${INSTALL_LOCAL_EMBEDDINGS:-true}
         APP_UID: ${APP_UID:-1000}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST:-}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
     restart: unless-stopped
     <<: *backend-env
     depends_on:
@@ -114,6 +117,7 @@ services:
       context: ./frontend
       args:
         BACKEND_URL: http://backend:8000
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
     restart: unless-stopped
     depends_on:
       - backend

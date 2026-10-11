@@ -1,5 +1,8 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
+# Set NPM_REGISTRY in .env if registry.npmjs.org is unreachable (company mirror)
+ARG NPM_REGISTRY=
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi     && npm config set fetch-retries 6 && npm config set fetch-timeout 180000
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
