@@ -1,4 +1,7 @@
 from functools import lru_cache
+from urllib.parse import quote
+
+from pydantic import Field
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +12,13 @@ class Settings(BaseSettings):
     # --- Core -------------------------------------------------------------
     app_env: str = "production"
     log_level: str = "INFO"
-    database_url: str = "postgresql+asyncpg://devops:devops@postgres:5432/devops_ai"
+    # Either set DATABASE_URL directly, or let it be built (URL-encoded) from the POSTGRES_* parts.
+    database_url_override: str | None = Field(default=None, validation_alias="DATABASE_URL")
+    postgres_user: str = "devops"
+    postgres_password: str = "devops"
+    postgres_db: str = "devops_ai"
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
     redis_url: str = "redis://redis:6379/0"
     qdrant_url: str = "http://qdrant:6333"
     qdrant_api_key: str | None = None
@@ -79,6 +88,13 @@ class Settings(BaseSettings):
     # --- Rate limits ------------------------------------------------------
     chat_rate_limit_per_minute: int = 20
     login_rate_limit_per_5min: int = 10
+
+    @property
+    def database_url(self) -> str:
+        if self.database_url_override:
+            return self.database_url_override
+        user, pwd = quote(self.postgres_user, safe=""), quote(self.postgres_password, safe="")
+        return f"postgresql+asyncpg://{user}:{pwd}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     @property
     def docker_allowlist(self) -> list[str]:

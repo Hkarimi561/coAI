@@ -3,7 +3,6 @@ name: devops-ai
 x-backend-env: &backend-env
   env_file: .env
   environment:
-    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-devops}:${POSTGRES_PASSWORD:-devops}@postgres:5432/${POSTGRES_DB:-devops_ai}
     REDIS_URL: redis://redis:6379/0
     QDRANT_URL: http://qdrant:6333
     SEARXNG_URL: http://searxng:8080
