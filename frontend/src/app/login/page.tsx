@@ -5,6 +5,7 @@ import { Terminal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { Preferences } from "@/components/preferences";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -37,6 +38,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
+      <Preferences className="absolute end-4 top-4" />
       <Card className="w-full max-w-sm">
         <CardContent className="space-y-5 p-6">
           <div className="flex items-center gap-3">

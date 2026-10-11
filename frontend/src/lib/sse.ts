@@ -5,6 +5,7 @@ export interface StreamHandlers {
   onUserMessage?: (m: Message) => void;
   onStatus?: (step: string) => void;
   onToken?: (text: string) => void;
+  onThinking?: (text: string) => void;
   onDone?: (m: Message) => void;
 }
 
@@ -47,6 +48,9 @@ export async function streamMessage(conversationId: string, content: string, h: 
         break;
       case "status":
         h.onStatus?.(String(payload.step ?? ""));
+        break;
+      case "thinking":
+        h.onThinking?.(String(payload.text ?? ""));
         break;
       case "token":
         h.onToken?.(String(payload.text ?? ""));

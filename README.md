@@ -202,6 +202,9 @@ cd frontend && npm install && BACKEND_URL=http://localhost:8000 npm run dev
 
 ## Scope notes
 
+* **Reasoning output:** the model's thinking (`<think>` blocks, Ollama `thinking`, LM Studio `reasoning_content`) streams into a collapsible panel above each answer and is stored with the message.
+* **Theme & direction:** the header has a dark/light toggle (animated circular reveal) and an RTL/LTR switch; both are remembered per browser.
+
 * The workflow is an explicit async state machine (no LangGraph dependency); nodes are small methods and easy to extend.
 * Persian fonts: the UI uses the `Vazirmatn` family if installed and falls back to Tahoma/system fonts. Self-host the font in `frontend/public` and add an `@font-face` if you need it everywhere.
 * No automated tests are included by request.

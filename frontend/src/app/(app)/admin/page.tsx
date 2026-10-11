@@ -26,6 +26,7 @@ import { SOURCE_COLOR, SOURCE_LABEL, STATUS_LABEL } from "@/lib/labels";
 import type { Analytics } from "@/lib/types";
 import { formatDate, formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
 
+const TOOLTIP = { background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 };
 const STATUS_COLOR = { unresolved: "#94a3b8", pending_review: "#d97706", resolved: "#16a34a" } as const;
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -95,10 +96,10 @@ export default function AnalyticsPage() {
         <ChartCard title="گفتگوهای روزانه">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.conversations_per_day} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="date" tickFormatter={(d: string) => formatDate(d)} tick={{ fontSize: 11 }} minTickGap={24} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-              <Tooltip labelFormatter={(d) => formatDate(String(d))} formatter={(v) => [formatNumber(Number(v)), "گفتگو"]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="date" tickFormatter={(d: string) => formatDate(d)} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} minTickGap={24} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+              <Tooltip contentStyle={TOOLTIP} itemStyle={{ color: "hsl(var(--foreground))" }} labelStyle={{ color: "hsl(var(--foreground))" }} labelFormatter={(d) => formatDate(String(d))} formatter={(v) => [formatNumber(Number(v)), "گفتگو"]} />
               <Area type="monotone" dataKey="conversations" stroke="#2563eb" fill="#2563eb33" />
             </AreaChart>
           </ResponsiveContainer>
@@ -110,10 +111,10 @@ export default function AnalyticsPage() {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={sources} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [formatNumber(Number(v)), "پاسخ"]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} interval={0} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip contentStyle={TOOLTIP} itemStyle={{ color: "hsl(var(--foreground))" }} labelStyle={{ color: "hsl(var(--foreground))" }} formatter={(v) => [formatNumber(Number(v)), "پاسخ"]} />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                   {sources.map((s) => (
                     <Cell key={s.source} fill={SOURCE_COLOR[s.source] ?? "#64748b"} />
@@ -132,8 +133,8 @@ export default function AnalyticsPage() {
                   <Cell key={s.key} fill={STATUS_COLOR[s.key]} />
                 ))}
               </Pie>
-              <Tooltip formatter={(v) => formatNumber(Number(v))} />
-              <Legend />
+              <Tooltip contentStyle={TOOLTIP} itemStyle={{ color: "hsl(var(--foreground))" }} labelStyle={{ color: "hsl(var(--foreground))" }} formatter={(v) => formatNumber(Number(v))} />
+              <Legend wrapperStyle={{ color: "hsl(var(--foreground))" }} />
             </PieChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -149,8 +150,8 @@ export default function AnalyticsPage() {
                     <Cell key={s.name} fill={s.color} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v) => formatNumber(Number(v))} />
-                <Legend />
+                <Tooltip contentStyle={TOOLTIP} itemStyle={{ color: "hsl(var(--foreground))" }} labelStyle={{ color: "hsl(var(--foreground))" }} formatter={(v) => formatNumber(Number(v))} />
+                <Legend wrapperStyle={{ color: "hsl(var(--foreground))" }} />
               </PieChart>
             </ResponsiveContainer>
           )}

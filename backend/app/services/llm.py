@@ -1,4 +1,7 @@
-"""LLM client for Ollama-native or OpenAI-compatible endpoints."""
+"""LLM client for Ollama-native or OpenAI-compatible endpoints (LM Studio, vLLM, llama.cpp, ...).
+
+Streaming yields (channel, text) pairs where channel is "think" (model reasoning) or "answer".
+"""
 
 import json
 import logging
@@ -10,13 +13,16 @@ from app.config import get_settings
 
 log = logging.getLogger(__name__)
 
+Chunk = tuple[str, str]
+
 
 class LLMError(RuntimeError):
     pass
 
 
-class ThinkFilter:
-    """Strips <think>...</think> blocks from a token stream, even when tags are split across chunks."""
+class ThinkSplitter:
+    """Splits a token stream into reasoning and answer parts based on <think>...</think> tags,
+    even when a tag is split across chunks."""
 
     OPEN = "<think>"
     CLOSE = "</think>"
@@ -32,35 +38,28 @@ class ThinkFilter:
                 return n
         return 0
 
-    def feed(self, chunk: str) -> str:
+    def feed(self, chunk: str) -> list[Chunk]:
         self.buf += chunk
-        out: list[str] = []
+        out: list[Chunk] = []
         while True:
-            if self.in_think:
-                i = self.buf.find(self.CLOSE)
-                if i == -1:
-                    keep = len(self.CLOSE) - 1
-                    if len(self.buf) > keep:
-                        self.buf = self.buf[-keep:]
-                    break
-                self.buf = self.buf[i + len(self.CLOSE):]
-                self.in_think = False
-            else:
-                i = self.buf.find(self.OPEN)
-                if i == -1:
-                    hold = self._partial(self.buf, self.OPEN)
-                    out.append(self.buf[: len(self.buf) - hold])
-                    self.buf = self.buf[len(self.buf) - hold:]
-                    break
-                out.append(self.buf[:i])
-                self.buf = self.buf[i + len(self.OPEN):]
-                self.in_think = True
-        return "".join(out)
+            tag = self.CLOSE if self.in_think else self.OPEN
+            channel = "think" if self.in_think else "answer"
+            i = self.buf.find(tag)
+            if i == -1:
+                hold = self._partial(self.buf, tag)
+                text = self.buf[: len(self.buf) - hold]
+                if text:
+                    out.append((channel, text))
+                self.buf = self.buf[len(self.buf) - hold:]
+                return out
+            if i:
+                out.append((channel, self.buf[:i]))
+            self.buf = self.buf[i + len(tag):]
+            self.in_think = not self.in_think
 
-    def flush(self) -> str:
-        rest = "" if self.in_think else self.buf
-        self.buf = ""
-        return rest
+    def flush(self) -> list[Chunk]:
+        rest, self.buf = self.buf, ""
+        return [("think" if self.in_think else "answer", rest)] if rest else []
 
 
 class LLMClient:
@@ -88,9 +87,9 @@ class LLMClient:
         return f"{self.base}/chat/completions", body
 
     # -- streaming --------------------------------------------------------
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[Chunk]:
         url, body = self._request(messages, True, None)
-        think = ThinkFilter()
+        splitter = ThinkSplitter()
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream("POST", url, json=body, headers=self.headers) as resp:
@@ -98,39 +97,41 @@ class LLMClient:
                         detail = (await resp.aread()).decode("utf-8", "replace")[:300]
                         raise LLMError(f"LLM returned HTTP {resp.status_code}: {detail}")
                     async for line in resp.aiter_lines():
-                        piece = self._parse_line(line)
-                        if piece:
-                            visible = think.feed(piece)
-                            if visible:
-                                yield visible
-            tail = think.flush()
-            if tail:
-                yield tail
+                        reasoning, content = self._parse_line(line)
+                        if reasoning:  # structured reasoning field (Ollama `thinking`, LM Studio `reasoning_content`)
+                            yield "think", reasoning
+                        if content:
+                            for part in splitter.feed(content):
+                                yield part
+            for part in splitter.flush():
+                yield part
         except httpx.HTTPError as exc:
             raise LLMError(f"LLM endpoint unreachable ({type(exc).__name__}): {exc}") from exc
 
-    def _parse_line(self, line: str) -> str:
+    def _parse_line(self, line: str) -> tuple[str, str]:
+        """Returns (reasoning_text, answer_text) contained in one streamed line."""
         line = line.strip()
         if not line:
-            return ""
+            return "", ""
         if self.s.llm_provider == "ollama":
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
-                return ""
+                return "", ""
             if data.get("error"):
                 raise LLMError(str(data["error"]))
-            return (data.get("message") or {}).get("content", "") or ""
+            msg = data.get("message") or {}
+            return msg.get("thinking") or "", msg.get("content") or ""
         if not line.startswith("data:"):
-            return ""
+            return "", ""
         payload = line[5:].strip()
         if payload == "[DONE]":
-            return ""
+            return "", ""
         try:
-            data = json.loads(payload)
-            return (data["choices"][0].get("delta") or {}).get("content") or ""
+            delta = json.loads(payload)["choices"][0].get("delta") or {}
         except (json.JSONDecodeError, KeyError, IndexError):
-            return ""
+            return "", ""
+        return delta.get("reasoning_content") or delta.get("reasoning") or "", delta.get("content") or ""
 
     async def health(self) -> tuple[bool, str]:
         """Cheap reachability + model-availability check (does not generate text)."""
@@ -165,5 +166,6 @@ class LLMClient:
             raise LLMError(f"LLM returned HTTP {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
         text = (data.get("message") or {}).get("content", "") if self.s.llm_provider == "ollama" else data["choices"][0]["message"]["content"]
-        f = ThinkFilter()
-        return (f.feed(text) + f.flush()).strip()
+        splitter = ThinkSplitter()
+        parts = splitter.feed(text or "") + splitter.flush()
+        return "".join(t for ch, t in parts if ch == "answer").strip()

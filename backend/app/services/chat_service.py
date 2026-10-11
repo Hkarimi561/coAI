@@ -70,6 +70,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit) -> N
             "signature_key": sig.key if sig else None,
             "refs": st.refs,
             "notes": st.notes,
+            **({"thinking": st.thinking} if st.thinking else {}),
             **({"llm_error": redact(st.llm_error)} if st.llm_error else {}),
         }
         async with SessionLocal() as session:

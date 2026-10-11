@@ -96,6 +96,7 @@ class TurnState:
     primary_source: str = "none"
     best_local: float = 0.0
     answer: str = ""
+    thinking: str = ""
     citations: list[dict[str, Any]] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     refs: list[str] = field(default_factory=list)
@@ -365,10 +366,15 @@ class TroubleshootingWorkflow:
             self._finish(st, None)
             return
         chunks: list[str] = []
+        thoughts: list[str] = []
         try:
-            async for piece in get_llm().stream(self._build_messages(st)):
-                chunks.append(piece)
-                await emit("token", {"text": piece})
+            async for channel, piece in get_llm().stream(self._build_messages(st)):
+                if channel == "think":
+                    thoughts.append(piece)
+                    await emit("thinking", {"text": piece})
+                else:
+                    chunks.append(piece)
+                    await emit("token", {"text": piece})
         except LLMError as exc:
             st.llm_error = str(exc)
             log.error("LLM failure: %s", exc)
@@ -378,6 +384,7 @@ class TroubleshootingWorkflow:
                 )
                 chunks.append(fallback)
                 await emit("token", {"text": fallback})
+        st.thinking = redact("".join(thoughts)).strip()[:30000]
         st.answer = redact("".join(chunks)).strip()
         self._finish(st, set(int(n) for n in re.findall(r"\[(\d{1,2})\]", st.answer)))
         if st.web_event == "fresh" and st.web_key and st.answer and not st.llm_error:

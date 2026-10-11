@@ -2,6 +2,7 @@
 
 import { Bot, User as UserIcon } from "lucide-react";
 
+import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { CitationList } from "@/components/chat/citations";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
           </p>
         ) : (
           <>
+            {meta.thinking ? <ThinkingPanel text={meta.thinking} /> : null}
             <Markdown content={message.content} />
             {streaming ? <span className="mt-1 inline-block h-4 w-1.5 animate-pulse bg-primary align-middle" aria-hidden /> : null}
             {!streaming ? <CitationList citations={message.citations} /> : null}

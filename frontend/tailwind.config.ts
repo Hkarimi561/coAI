@@ -1,19 +1,23 @@
 import type { Config } from "tailwindcss";
 
+// `<alpha-value>` is required for opacity modifiers such as bg-primary/10 to work with CSS-variable colors.
+const c = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
+
 const config: Config = {
+  darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
-        card: "hsl(var(--card))",
-        muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
-        border: "hsl(var(--border))",
-        primary: { DEFAULT: "hsl(var(--primary))", foreground: "hsl(var(--primary-foreground))" },
-        danger: "hsl(var(--danger))",
-        success: "hsl(var(--success))",
-        warning: "hsl(var(--warning))",
+        background: c("background"),
+        foreground: c("foreground"),
+        card: c("card"),
+        muted: { DEFAULT: c("muted"), foreground: c("muted-foreground") },
+        border: c("border"),
+        primary: { DEFAULT: c("primary"), foreground: c("primary-foreground") },
+        danger: c("danger"),
+        success: c("success"),
+        warning: c("warning"),
       },
       fontFamily: {
         sans: ["Vazirmatn", "Vazir", "Segoe UI", "Tahoma", "system-ui", "sans-serif"],

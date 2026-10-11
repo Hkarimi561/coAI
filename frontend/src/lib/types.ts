@@ -41,6 +41,7 @@ export interface MessageMeta {
   web_event?: string;
   kind?: string;
   notes?: string[];
+  thinking?: string;
   llm_error?: string;
   [key: string]: unknown;
 }

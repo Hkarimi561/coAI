@@ -16,9 +16,60 @@
   --warning: 32 90% 40%;
 }
 
+.dark {
+  --background: 224 28% 8%;
+  --foreground: 210 20% 94%;
+  --card: 224 26% 12%;
+  --muted: 224 20% 17%;
+  --muted-foreground: 215 15% 68%;
+  --border: 224 18% 24%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --danger: 0 84% 66%;
+  --success: 142 62% 46%;
+  --warning: 38 92% 56%;
+}
+
 html,
 body {
   height: 100%;
+}
+
+/* ---- theme switching animation -------------------------------------------------------------
+   1) Browsers with the View Transitions API get a circular reveal from the toggle button.
+   2) Everyone else (and prefers-reduced-motion users get none) gets a smooth colour cross-fade. */
+.theme-anim,
+.theme-anim *,
+.theme-anim *::before,
+.theme-anim *::after {
+  transition:
+    background-color 0.4s ease,
+    color 0.4s ease,
+    border-color 0.4s ease,
+    fill 0.4s ease,
+    stroke 0.4s ease !important;
+}
+html.theme-reveal::view-transition-old(root),
+html.theme-reveal::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.theme-reveal::view-transition-old(root) {
+  z-index: 1;
+}
+html.theme-reveal::view-transition-new(root) {
+  z-index: 2147483646;
+}
+/* direction (RTL/LTR) switch uses the default cross-fade of the View Transitions API */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.35s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-anim,
+  .theme-anim * {
+    transition: none !important;
+  }
 }
 
 body {

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
+import { Preferences } from "@/components/preferences";
 import { HeaderStatus } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
@@ -71,6 +72,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </div>
         <div className="flex items-center gap-3 text-sm">
           <HeaderStatus />
+          <Preferences />
           <span className="hidden text-muted-foreground sm:inline" dir="ltr">
             {me.email}
           </span>

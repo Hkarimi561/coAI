@@ -5,6 +5,7 @@ import { CheckCircle2, Send, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { SystemStatusBar } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import type { Conversation, ConversationDetail, Message } from "@/lib/types";
 interface Live {
   user: string;
   text: string;
+  thinking: string;
   step: string | null;
 }
 
@@ -41,10 +43,11 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
   const send = useCallback(
     async (id: string, content: string) => {
       setError(null);
-      setLive({ user: content, text: "", step: null });
+      setLive({ user: content, text: "", thinking: "", step: null });
       try {
         await streamMessage(id, content, {
           onStatus: (step) => setLive((l) => (l ? { ...l, step } : l)),
+          onThinking: (t) => setLive((l) => (l ? { ...l, thinking: l.thinking + t } : l)),
           onToken: (t) => setLive((l) => (l ? { ...l, text: l.text + t } : l)),
         });
       } catch (e) {
@@ -155,9 +158,10 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
           {live ? (
             <>
               <MessageBubble message={{ role: "user", content: live.user, citations: [], meta: {} }} />
+              {live.thinking ? <div className="ps-11"><ThinkingPanel text={live.thinking} streaming={!live.text} /></div> : null}
               {live.text ? (
                 <MessageBubble message={{ role: "assistant", content: live.text, citations: [], meta: {} }} streaming />
-              ) : (
+              ) : live.thinking ? null : (
                 <div className="flex items-center gap-2 ps-11 text-sm text-muted-foreground" role="status">
                   <Spinner /> {live.step ? (STEP_LABEL[live.step] ?? "در حال پردازش…") : "در حال پردازش…"}
                 </div>
