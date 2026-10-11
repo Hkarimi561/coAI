@@ -132,6 +132,27 @@ class LLMClient:
         except (json.JSONDecodeError, KeyError, IndexError):
             return ""
 
+    async def health(self) -> tuple[bool, str]:
+        """Cheap reachability + model-availability check (does not generate text)."""
+        ollama = self.s.llm_provider == "ollama"
+        url = f"{self.base}/api/tags" if ollama else f"{self.base}/models"
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.get(url, headers=self.headers)
+        except httpx.HTTPError as exc:
+            return False, f"Cannot reach {self.base} ({type(exc).__name__}). Is the LLM server running and listening on 0.0.0.0?"
+        if resp.status_code >= 400:
+            return False, f"{url} returned HTTP {resp.status_code}"
+        try:
+            data = resp.json()
+            names = [m.get("name", "") for m in data.get("models", [])] if ollama else [m.get("id", "") for m in data.get("data", [])]
+        except ValueError:
+            return False, "Unexpected response from the LLM server"
+        model = self.s.llm_model
+        if names and model not in names and f"{model}:latest" not in names:
+            return False, f"Server is reachable but model '{model}' is not installed. Available: {', '.join(names[:8])}"
+        return True, f"{model} @ {self.base}"
+
     # -- one-shot ---------------------------------------------------------
     async def complete(self, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
         url, body = self._request(messages, False, max_tokens)

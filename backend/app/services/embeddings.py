@@ -23,6 +23,30 @@ class Embedder:
         self._load_lock = asyncio.Lock()
         self._dim: int | None = None
         self._uses_e5_prefix = "e5" in self.s.embedding_model.lower()
+        self.error: str | None = None
+        self._task: asyncio.Task | None = None
+
+    # -- observable state (used by the status endpoint) --------------------
+    def state(self) -> str:
+        """ready | loading | error"""
+        if self._dim is not None:
+            return "ready"
+        if self._task is not None and not self._task.done():
+            return "loading"
+        return "error" if self.error else "loading"
+
+    def warmup(self) -> None:
+        """Start (or retry after a failure) loading the model in the background without blocking the caller."""
+        if self._dim is None and (self._task is None or self._task.done()):
+            self._task = asyncio.create_task(self._probe())
+
+    async def _probe(self) -> None:
+        try:
+            await self.dimension()
+            self.error = None
+        except Exception as exc:  # noqa: BLE001
+            self.error = f"{type(exc).__name__}: {exc}"[:400]
+            log.error("Embedding model not available: %s", self.error)
 
     def _prefixed(self, texts: list[str], kind: Kind) -> list[str]:
         if not self._uses_e5_prefix:

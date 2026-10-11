@@ -68,6 +68,18 @@ Files can also be uploaded or authored in the admin UI. Deleted files are remove
    `host.docker.internal` works on Docker Desktop; on Linux the compose file maps it with `host-gateway`.
 4. `docker compose up -d backend` and ask a question.
 
+**LM Studio** (OpenAI-compatible, default port 1234)
+
+1. In LM Studio load the model, open the *Developer* tab, start the server and enable **Serve on Local Network** (otherwise it only listens on localhost and Docker cannot reach it).
+2. In `.env` use the address Docker can reach (your host IP, e.g. `172.19.240.1`, or `host.docker.internal`):
+   ```env
+   LLM_PROVIDER=openai
+   LLM_BASE_URL=http://172.19.240.1:1234/v1
+   LLM_MODEL=<model id exactly as LM Studio lists it>
+   ```
+3. `docker compose up -d backend` and check *Admin → System status* (the header also shows the LLM connection). If the model name is wrong the status page lists the ids the server offers.
+4. Optional: if you also load an embedding model in LM Studio, use it instead of the local torch model: `EMBEDDING_PROVIDER=openai`, `EMBEDDING_MODEL=<embedding model id>` (it reuses `LLM_BASE_URL`), `INSTALL_LOCAL_EMBEDDINGS=false`.
+
 **Any OpenAI-compatible server** (llama.cpp `llama-server`, vLLM, LM Studio, Ollama's `/v1`):
 
 ```env

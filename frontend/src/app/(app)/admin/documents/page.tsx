@@ -5,6 +5,7 @@ import { FilePlus2, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { DocumentEditor, type EditorTarget } from "@/components/admin/document-editor";
+import { SystemStatusBar } from "@/components/system-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -50,9 +51,9 @@ export default function DocumentsPage() {
     },
   });
   const upload = useMutation({
-    mutationFn: (files: FileList) => {
+    mutationFn: (files: File[]) => {
       const form = new FormData();
-      Array.from(files).forEach((f) => form.append("files", f));
+      files.forEach((f) => form.append("files", f));
       return api.upload<{ filename: string; ok: boolean; chunks?: number; error?: string }[]>("/admin/documents/upload", form);
     },
     onSuccess: (rows) => {
@@ -86,8 +87,10 @@ export default function DocumentsPage() {
           multiple
           hidden
           onChange={(e) => {
-            if (e.target.files?.length) upload.mutate(e.target.files);
+            // copy first: resetting the input empties the live FileList, which would send an empty form
+            const picked = Array.from(e.target.files ?? []);
             e.target.value = "";
+            if (picked.length) upload.mutate(picked);
           }}
         />
         <Button variant="outline" onClick={() => fileInput.current?.click()} disabled={upload.isPending}>
@@ -104,6 +107,7 @@ export default function DocumentsPage() {
         فقط فایل‌های جدید یا تغییرکرده دوباره ایندکس می‌شوند (بر اساس هش محتوا). فایل‌های حذف‌شده از دیسک از Qdrant هم پاک می‌شوند.
       </p>
 
+      <SystemStatusBar />
       <ErrorBanner error={docs.error ?? reindex.error ?? upload.error ?? open.error ?? remove.error} />
       {report ? <pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-xs text-left">{report}</pre> : null}
 
@@ -148,7 +152,14 @@ export default function DocumentsPage() {
                   </td>
                   <td className="p-3">{formatNumber(d.chunk_count)}</td>
                   <td className="p-3">
-                    {d.status === "indexed" ? <Badge tone="success">ایندکس</Badge> : <Badge tone="danger" title={d.error ?? ""}>خطا</Badge>}
+                    {d.status === "indexed" ? (
+                      <Badge tone="success">ایندکس</Badge>
+                    ) : (
+                      <div className="max-w-xs space-y-1">
+                        <Badge tone="danger">خطا در ایندکس</Badge>
+                        <p className="ltr break-words text-[11px] text-danger">{d.error}</p>
+                      </div>
+                    )}
                   </td>
                   <td className="p-3 text-muted-foreground">{formatDateTime(d.indexed_at)}</td>
                   <td className="p-3">

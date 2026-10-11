@@ -172,6 +172,15 @@ export interface CacheDetail extends Omit<CacheRow, "result_count" | "has_answer
   answer: string | null;
 }
 
+export type ComponentKey = "llm" | "embeddings" | "qdrant" | "postgres" | "redis" | "web_search" | "docker" | "ci";
+
+export interface SystemStatus {
+  /** ok: true = healthy, false = failing, null = loading / disabled / not configured */
+  components: Record<ComponentKey, { ok: boolean | null; detail: string }>;
+  assistant_ready: boolean;
+  documents?: Record<string, number>;
+}
+
 export interface Analytics {
   days: number;
   totals: { conversations: number; answered_conversations: number; resolved: number; resolution_rate: number; turns: number };

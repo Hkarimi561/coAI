@@ -14,6 +14,7 @@ const TABS = [
   { href: "/admin/documents", label: "مستندات" },
   { href: "/admin/cache", label: "کش جستجوی وب" },
   { href: "/admin/users", label: "کاربران" },
+  { href: "/admin/status", label: "وضعیت سیستم" },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

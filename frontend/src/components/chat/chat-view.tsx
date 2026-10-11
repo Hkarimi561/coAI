@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { SystemStatusBar } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { Textarea } from "@/components/ui/input";
@@ -171,6 +172,7 @@ export function ChatView({ conversationId }: { conversationId: string | null }) 
 
       <div className="border-t border-border bg-card p-3">
         <div className="mx-auto max-w-3xl space-y-2">
+          <SystemStatusBar />
           {phase === "awaiting_error" && !live ? (
             <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning" role="status">
               لطفاً خطا یا خروجی جدید را در کادر زیر بچسبانید؛ جستجوی بعدی با اطلاعات تازه و بدون تکرار پیشنهادهای ناموفق انجام می‌شود.

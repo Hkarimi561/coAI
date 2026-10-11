@@ -5,14 +5,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import func, select, text
 
-from app.api import admin, auth, chat
+from app.api import admin, auth, chat, system
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import User
 from app.redis_client import get_redis
 from app.security import hash_password
 from app.services import ingestion
-from app.services.container import get_vectorstore
+from app.services.container import get_embedder, get_vectorstore
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -47,6 +47,7 @@ async def background_index() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await seed_admin()
+    get_embedder().warmup()  # start loading/downloading the embedding model right away
     task = asyncio.create_task(background_index()) if settings.auto_index_on_start else None
     yield
     if task:
@@ -58,6 +59,7 @@ app = FastAPI(title="DevOps AI Assistant", version="1.0.0", lifespan=lifespan, d
 app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(system.router, prefix="/api")
 
 
 @app.get("/api/health")
