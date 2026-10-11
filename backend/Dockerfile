@@ -17,10 +17,11 @@ ENV PIP_INDEX_URL=${PIP_INDEX_URL} PIP_DEFAULT_TIMEOUT=180 PIP_RETRIES=10
 WORKDIR /app
 
 COPY requirements.txt requirements-embeddings.txt ./
-RUN pip install -r requirements.txt \
+RUN TH="${PIP_TRUSTED_HOST:+--trusted-host $PIP_TRUSTED_HOST}" \
+    && pip install $TH -r requirements.txt \
     && if [ "$INSTALL_LOCAL_EMBEDDINGS" = "true" ]; then \
-         pip install torch --index-url https://download.pytorch.org/whl/cpu \
-         && pip install -r requirements-embeddings.txt; \
+         pip install $TH torch --index-url "$TORCH_INDEX_URL" \
+         && pip install $TH -r requirements-embeddings.txt; \
        fi
 
 RUN useradd --uid ${APP_UID} --create-home app \
