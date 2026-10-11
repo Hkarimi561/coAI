@@ -1,0 +1,53 @@
+import type { CitationKind, ConversationStatus } from "@/lib/types";
+
+export const STATUS_LABEL: Record<ConversationStatus, string> = {
+  unresolved: "حل‌نشده",
+  pending_review: "در انتظار بازبینی",
+  resolved: "حل‌شده",
+};
+
+export const STATUS_TONE = { unresolved: "neutral", pending_review: "warning", resolved: "success" } as const;
+
+export const SOURCE_LABEL: Record<string, string> = {
+  local_docs: "مستندات داخلی",
+  solutions: "راه‌حل تأییدشده",
+  web_cache: "کش وب",
+  web_fresh: "وب (جستجوی جدید)",
+  docker: "داکر",
+  ci: "CI",
+  none: "بدون منبع",
+};
+
+export const SOURCE_COLOR: Record<string, string> = {
+  local_docs: "#2563eb",
+  solutions: "#7c3aed",
+  web_cache: "#0891b2",
+  web_fresh: "#ea580c",
+  docker: "#16a34a",
+  ci: "#64748b",
+};
+
+export const CITATION_LABEL: Record<CitationKind, string> = {
+  doc: "مستند داخلی",
+  solution: "راه‌حل تأییدشده",
+  web: "وب",
+  docker: "داکر",
+  ci: "CI",
+};
+
+export const WEB_EVENT_LABEL: Record<string, string> = {
+  none: "بدون جستجوی وب",
+  cache_hit: "از کش (جستجوی وب انجام نشد)",
+  coalesced: "ادغام با جستجوی هم‌زمان",
+  fresh: "جستجوی تازه در وب",
+  failed: "جستجوی وب ناموفق",
+};
+
+export const STEP_LABEL: Record<string, string> = {
+  gather_tools: "بررسی کانتینر / CI…",
+  plan_queries: "تحلیل خطا…",
+  retrieve_local: "جستجو در مستندات داخلی…",
+  retrieve_cache: "بررسی راه‌حل‌های تأییدشده و کش وب…",
+  web_search: "جستجو در وب…",
+  generate: "نوشتن پاسخ…",
+};

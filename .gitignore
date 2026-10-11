@@ -1,0 +1,10 @@
+.env
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.venv/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+docs/promoted/
+docs/uploads/

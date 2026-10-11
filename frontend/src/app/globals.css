@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 20% 98%;
+  --foreground: 222 30% 14%;
+  --card: 0 0% 100%;
+  --muted: 214 20% 94%;
+  --muted-foreground: 215 14% 40%;
+  --border: 214 18% 87%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --danger: 0 72% 46%;
+  --success: 142 64% 30%;
+  --warning: 32 90% 40%;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-background font-sans text-foreground antialiased;
+}
+
+*:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+/* Terminal output, code and logs are always LTR even inside the RTL layout. */
+pre,
+code,
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Rendered Markdown */
+.md {
+  @apply text-[0.95rem] leading-7;
+  overflow-wrap: anywhere;
+}
+.md > * + * {
+  @apply mt-3;
+}
+.md h1 {
+  @apply mt-5 text-xl font-bold;
+}
+.md h2 {
+  @apply mt-5 border-b border-border pb-1 text-lg font-bold;
+}
+.md h3 {
+  @apply mt-4 text-base font-bold;
+}
+.md ul {
+  @apply list-disc ps-6;
+}
+.md ol {
+  @apply list-decimal ps-6;
+}
+.md li + li {
+  @apply mt-1;
+}
+.md a {
+  @apply text-primary underline underline-offset-2;
+}
+.md blockquote {
+  @apply border-s-4 border-border ps-3 text-muted-foreground;
+}
+.md table {
+  @apply block w-full overflow-x-auto text-sm;
+}
+.md th,
+.md td {
+  @apply border border-border px-2 py-1 text-start;
+}
+.md th {
+  @apply bg-muted;
+}
+.md :not(pre) > code {
+  @apply rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em];
+}
+.md pre {
+  @apply overflow-x-auto rounded-lg bg-[#0d1117] p-3 text-left font-mono text-[0.82rem] leading-6 text-[#e6edf3];
+}
+.md pre code {
+  @apply bg-transparent p-0;
+}

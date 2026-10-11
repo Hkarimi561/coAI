@@ -1,0 +1,22 @@
+# Minimal SearXNG config for use as a private JSON search backend.
+use_default_settings: true
+
+general:
+  instance_name: "devops-ai-search"
+  debug: false
+
+server:
+  # CHANGE-ME: any random string
+  secret_key: "change-me-searxng-secret-key"
+  limiter: false          # internal network only, no bot protection needed
+  image_proxy: false
+  public_instance: false
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json                # required by the backend (format=json)
+
+ui:
+  static_use_hash: true
