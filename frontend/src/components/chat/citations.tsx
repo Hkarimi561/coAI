@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, FileText } from "lucide-react";
+import { Download, ExternalLink, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { CITATION_LABEL } from "@/lib/labels";
@@ -26,6 +26,10 @@ export function CitationList({ citations }: { citations: Citation[] }) {
   );
 }
 
+function downloadUrl(path: string): string {
+  return `/api/chat/documents/download?path=${encodeURIComponent(path)}`;
+}
+
 function CitationRow({ c }: { c: Citation }) {
   return (
     <li className="text-sm">
@@ -43,6 +47,17 @@ function CitationRow({ c }: { c: Citation }) {
             <span className="text-xs text-muted-foreground" dir="auto">
               {c.location}
             </span>
+          ) : null}
+          {c.kind === "doc" && c.path ? (
+            <a
+              href={downloadUrl(c.path)}
+              download
+              onClick={(e) => e.stopPropagation()}
+              className="ms-auto inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-primary hover:bg-muted"
+              title="دانلود فایل کامل Markdown"
+            >
+              <Download className="h-3 w-3" /> دانلود .md
+            </a>
           ) : null}
         </summary>
         <div className="mt-2 space-y-1.5">

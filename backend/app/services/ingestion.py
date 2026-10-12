@@ -26,6 +26,16 @@ from app.services.container import get_embedder, get_vectorstore
 log = logging.getLogger(__name__)
 _NS = uuid.UUID("6f1c3b1e-5a7b-4d62-9f0e-3a1c9d2b7e11")
 _LOCK_KEY = "lock:ingest"
+startup_pending = False  # True from process start until the startup indexing run has finished (or given up)
+
+
+# live progress of the current indexing run (single uvicorn worker, so a module-level dict is enough)
+progress: dict = {"running": False, "total": 0, "done": 0, "current": None}
+
+
+async def is_indexing() -> bool:
+    """True while docs are being indexed (startup run pending or an indexing run holds the lock); chat is disabled meanwhile."""
+    return startup_pending or bool(progress["running"]) or bool(await get_redis().exists(_LOCK_KEY))
 
 
 class DocsError(ValueError):
@@ -74,7 +84,12 @@ async def index_content(session: AsyncSession, rel_path: str, raw: str, source: 
     content_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     doc = (await session.execute(select(Document).where(Document.path == rel_path))).scalar_one_or_none()
     if doc and doc.content_hash == content_hash and doc.status == "indexed" and not force:
-        return doc
+        # skip only when the vectors really exist (they are missing e.g. after switching QDRANT_COLLECTION / embedding model)
+        try:
+            if await get_vectorstore().count_where(kind="doc", path=rel_path) >= (doc.chunk_count or 0):
+                return doc
+        except Exception:  # noqa: BLE001 - if Qdrant cannot be asked, re-index to be safe
+            pass
 
     parsed = parse_document(raw, fallback_title=Path(rel_path).stem)
     chunks = chunk_markdown(parsed.body, parsed.title, get_settings().chunk_max_chars)
@@ -167,10 +182,13 @@ async def sync_directory(force: bool = False) -> SyncReport:
         root = docs_root()
         files = sorted(p for p in root.rglob("*.md") if p.is_file())
         seen: set[str] = set()
+        progress.update(running=True, total=len(files), done=0, current=None)
         async with SessionLocal() as session:
             for path in files:
                 rel = path.relative_to(root).as_posix()
                 seen.add(rel)
+                progress["current"] = rel
+                await redis.expire(_LOCK_KEY, 900)  # keep the lock alive during long runs
                 try:
                     raw = await asyncio.to_thread(path.read_text, encoding="utf-8")
                     existing = (await session.execute(select(Document).where(Document.path == rel))).scalar_one_or_none()
@@ -185,6 +203,7 @@ async def sync_directory(force: bool = False) -> SyncReport:
                     await session.rollback()
                     log.exception("Indexing failed for %s", rel)
                     report.errors.append({"path": rel, "error": redact(str(exc))[:300]})
+                progress["done"] += 1
             for doc in (await session.execute(select(Document))).scalars().all():
                 if doc.path not in seen:
                     await get_vectorstore().delete_where(kind="doc", path=doc.path)
@@ -192,6 +211,7 @@ async def sync_directory(force: bool = False) -> SyncReport:
                     report.removed.append(doc.path)
             await session.commit()
     finally:
+        progress.update(running=False, current=None)
         if await redis.get(_LOCK_KEY) == token:
             await redis.delete(_LOCK_KEY)
     return report

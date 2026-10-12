@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import func, select, text
 
-from app.api import admin, auth, chat, container_admin, containers, system
+from app.api import admin, admin_ext, auth, chat, container_admin, containers, system
+from app.services import skills
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import User
@@ -33,21 +34,26 @@ async def seed_admin() -> None:
 
 
 async def background_index() -> None:
-    for attempt in range(1, 6):  # Qdrant / model download may still be warming up
-        try:
-            report = await ingestion.sync_directory()
-            log.info("Startup indexing: %d indexed, %d unchanged, %d removed, %d errors",
-                     len(report.indexed), report.skipped, len(report.removed), len(report.errors))
-            return
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Startup indexing attempt %d failed: %s", attempt, exc)
-            await asyncio.sleep(10 * attempt)
+    try:
+        for attempt in range(1, 6):  # Qdrant / model download may still be warming up
+            try:
+                report = await ingestion.sync_directory()
+                log.info("Startup indexing: %d indexed, %d unchanged, %d removed, %d errors",
+                         len(report.indexed), report.skipped, len(report.removed), len(report.errors))
+                await skills.reindex_all()  # skills share the vector collection
+                return
+            except Exception as exc:  # noqa: BLE001
+                log.warning("Startup indexing attempt %d failed: %s", attempt, exc)
+                await asyncio.sleep(10 * attempt)
+    finally:
+        ingestion.startup_pending = False
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await seed_admin()
     get_embedder().warmup()  # start loading/downloading the embedding model right away
+    ingestion.startup_pending = settings.auto_index_on_start
     task = asyncio.create_task(background_index()) if settings.auto_index_on_start else None
     yield
     if task:
@@ -59,6 +65,7 @@ app = FastAPI(title="DevOps AI Assistant", version="1.0.0", lifespan=lifespan, d
 app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(admin_ext.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(containers.router, prefix="/api")
 app.include_router(container_admin.router, prefix="/api")

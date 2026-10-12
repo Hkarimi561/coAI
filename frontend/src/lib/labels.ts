@@ -60,4 +60,5 @@ export const STEP_LABEL: Record<string, string> = {
   retrieve_cache: "بررسی راه‌حل‌های تأییدشده و کش وب…",
   web_search: "جستجو در وب…",
   generate: "نوشتن پاسخ…",
+  mcp_tool: "در حال اجرای ابزار MCP…",
 };

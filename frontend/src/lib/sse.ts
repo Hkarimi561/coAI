@@ -17,6 +17,24 @@ export async function streamMessage(conversationId: string, content: string, h: 
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: JSON.stringify({ content, refresh }),
   });
+  await consume(res, h);
+}
+
+/**
+ * Re-attaches to a turn that is still running on the server (user left the page and came back): the server replays
+ * what was produced so far, then streams live. Resolves quietly when nothing is running or on abort.
+ */
+export async function attachStream(conversationId: string, h: StreamHandlers, signal?: AbortSignal): Promise<void> {
+  const res = await fetch(`/api/chat/conversations/${conversationId}/stream`, {
+    credentials: "same-origin",
+    headers: { Accept: "text/event-stream" },
+    signal,
+  });
+  if (res.status === 404) return;
+  await consume(res, h);
+}
+
+async function consume(res: Response, h: StreamHandlers): Promise<void> {
   if (!res.ok || !res.body) {
     let detail = res.statusText;
     try {

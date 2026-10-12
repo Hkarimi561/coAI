@@ -1,11 +1,14 @@
 """LLM client for Ollama-native or OpenAI-compatible endpoints (LM Studio, vLLM, llama.cpp, ...).
 
-Streaming yields (channel, text) pairs where channel is "think" (model reasoning) or "answer".
+Streaming yields (channel, text) pairs where channel is "think" (model reasoning), "answer", or "usage"
+(a JSON string {"prompt_tokens": n, "completion_tokens": n} sent once at the end when the server reports it).
 """
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
@@ -71,9 +74,29 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {self.s.llm_api_key}"
         self.headers = headers
         self.timeout = httpx.Timeout(self.s.llm_timeout_s, connect=10.0)
+        self._ctx: tuple[float, int] = (0.0, 0)
+
+    async def context_window(self) -> int:
+        """Context length of the loaded model (LM Studio reports it), else the configured value."""
+        configured = self.s.llm_context_tokens or self.s.llm_num_ctx
+        if self.s.llm_provider == "ollama" or self.s.llm_context_tokens:
+            return configured
+        ts, value = self._ctx
+        if time.monotonic() - ts < 30:
+            return value or configured
+        value = 0
+        try:
+            root = self.base[:-3] if self.base.endswith("/v1") else self.base
+            async with httpx.AsyncClient(timeout=3) as client:
+                data = (await client.get(f"{root}/api/v0/models", headers=self.headers)).json().get("data", [])
+            value = next((int(m.get("loaded_context_length") or 0) for m in data if m.get("id") == self.s.llm_model), 0)
+        except Exception:  # noqa: BLE001 - not LM Studio / unreachable: fall back to the configured value
+            pass
+        self._ctx = (time.monotonic(), value)
+        return value or configured
 
     # -- request building -------------------------------------------------
-    def _request(self, messages: list[dict[str, str]], stream: bool, max_tokens: int | None) -> tuple[str, dict]:
+    def _request(self, messages: list[dict[str, Any]], stream: bool, max_tokens: int | None, tools: list[dict] | None = None) -> tuple[str, dict]:
         s = self.s
         if s.llm_provider == "ollama":
             options: dict = {"temperature": s.llm_temperature, "num_ctx": s.llm_num_ctx}
@@ -82,14 +105,22 @@ class LLMClient:
             body = {"model": s.llm_model, "messages": messages, "stream": stream, "think": s.llm_think, "options": options}
             return f"{self.base}/api/chat", body
         body = {"model": s.llm_model, "messages": messages, "stream": stream, "temperature": s.llm_temperature}
+        if tools:  # OpenAI-style function calling (LM Studio, vLLM, ...)
+            body["tools"] = tools
+            body["tool_choice"] = "auto"
+        if s.llm_reasoning_effort:
+            body["reasoning_effort"] = s.llm_reasoning_effort  # "none" turns reasoning off: far faster on slow local models
+        if stream:
+            body["stream_options"] = {"include_usage": True}  # final chunk carries token counts
         if max_tokens:
             body["max_tokens"] = max_tokens
         return f"{self.base}/chat/completions", body
 
     # -- streaming --------------------------------------------------------
-    async def stream(self, messages: list[dict[str, str]]) -> AsyncIterator[Chunk]:
-        url, body = self._request(messages, True, None)
+    async def stream(self, messages: list[dict[str, Any]], tools: list[dict] | None = None) -> AsyncIterator[Chunk]:
+        url, body = self._request(messages, True, None, tools if self.s.llm_provider != "ollama" else None)
         splitter = ThinkSplitter()
+        calls: dict[int, dict[str, str]] = {}  # streamed tool-call fragments by index
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream("POST", url, json=body, headers=self.headers) as resp:
@@ -97,6 +128,14 @@ class LLMClient:
                         detail = (await resp.aread()).decode("utf-8", "replace")[:300]
                         raise LLMError(f"LLM returned HTTP {resp.status_code}: {detail}")
                     async for line in resp.aiter_lines():
+                        for frag in self._tool_fragments(line):
+                            c = calls.setdefault(frag["index"], {"id": "", "name": "", "arguments": ""})
+                            c["id"] = frag["id"] or c["id"]
+                            c["name"] += frag["name"]
+                            c["arguments"] += frag["arguments"]
+                        usage = self._usage_of(line)
+                        if usage:
+                            yield "usage", json.dumps(usage)
                         reasoning, content = self._parse_line(line)
                         if reasoning:  # structured reasoning field (Ollama `thinking`, LM Studio `reasoning_content`)
                             yield "think", reasoning
@@ -105,8 +144,43 @@ class LLMClient:
                                 yield part
             for part in splitter.flush():
                 yield part
+            if calls:  # the model asked for tools: ('tool_calls', JSON list of {id, name, arguments})
+                yield "tool_calls", json.dumps([calls[i] for i in sorted(calls)])
         except httpx.HTTPError as exc:
             raise LLMError(f"LLM endpoint unreachable ({type(exc).__name__}): {exc}") from exc
+
+    def _tool_fragments(self, line: str) -> list[dict[str, Any]]:
+        """Tool-call fragments contained in one streamed OpenAI-style line."""
+        line = line.strip()
+        if self.s.llm_provider == "ollama" or not line.startswith("data:") or line[5:].strip() == "[DONE]":
+            return []
+        try:
+            delta = json.loads(line[5:].strip())["choices"][0].get("delta") or {}
+        except (json.JSONDecodeError, KeyError, IndexError):
+            return []
+        out = []
+        for i, tc in enumerate(delta.get("tool_calls") or []):
+            fn = tc.get("function") or {}
+            out.append({"index": tc.get("index", i), "id": tc.get("id") or "", "name": fn.get("name") or "", "arguments": fn.get("arguments") or ""})
+        return out
+
+    def _usage_of(self, line: str) -> dict[str, int] | None:
+        """Token counts reported by the server in a streamed line, if any."""
+        line = line.strip()
+        try:
+            if self.s.llm_provider == "ollama":
+                data = json.loads(line)
+                if data.get("done") and "eval_count" in data:
+                    return {"prompt_tokens": int(data.get("prompt_eval_count") or 0), "completion_tokens": int(data.get("eval_count") or 0)}
+                return None
+            if not line.startswith("data:") or line[5:].strip() == "[DONE]":
+                return None
+            usage = json.loads(line[5:].strip()).get("usage")
+        except (json.JSONDecodeError, ValueError, AttributeError):
+            return None
+        if isinstance(usage, dict) and usage.get("total_tokens") is not None:
+            return {"prompt_tokens": int(usage.get("prompt_tokens") or 0), "completion_tokens": int(usage.get("completion_tokens") or 0)}
+        return None
 
     def _parse_line(self, line: str) -> tuple[str, str]:
         """Returns (reasoning_text, answer_text) contained in one streamed line."""

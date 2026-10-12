@@ -7,19 +7,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { Composer } from "@/components/chat/composer";
+import { ContextUsage } from "@/components/chat/context-usage";
 import { MemoryPanel } from "@/components/chat/memory-panel";
 import { MessageBubble } from "@/components/chat/message-bubble";
-import { SystemStatusBar } from "@/components/system-status";
+import { SystemStatusBar, useSystemStatus } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { STEP_LABEL } from "@/lib/labels";
 import { takePendingMessage, setPendingMessage } from "@/lib/pending";
-import { streamMessage } from "@/lib/sse";
+import { attachStream, streamMessage } from "@/lib/sse";
 import type { Conversation, ConversationDetail, Message } from "@/lib/types";
 
 interface Live {
-  user: string;
+  /** null when re-attached to a running turn: the user message is already part of the saved history */
+  user: string | null;
   text: string;
   thinking: string;
   step: string | null;
@@ -29,6 +31,7 @@ const EXAMPLES = ["چطور Nginx را ریستارت کنم؟", "آخرین خ�
 
 export function ChatView({ conversationId, mode = "support" }: { conversationId: string | null; mode?: "support" | "teach" }) {
   const qc = useQueryClient();
+  const status = useSystemStatus();
   const router = useRouter();
   const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -40,6 +43,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
     queryKey: ["conversation", conversationId],
     queryFn: () => api.get<ConversationDetail>(`/chat/conversations/${conversationId}`),
     enabled: !!conversationId,
+    refetchOnMount: "always",
     // the session memory summary is refreshed by the backend a few seconds after each answer
     refetchInterval: (q) => (q.state.data?.memory?.updating ? 3000 : false),
   });
@@ -68,6 +72,42 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
     },
     [qc],
   );
+
+  // The user left this page while an answer was being generated and came back: re-attach and show the progress again.
+  const liveRef = useRef<Live | null>(null);
+  liveRef.current = live;
+  const running = !!detail.data?.active;
+  useEffect(() => {
+    if (!conversationId || !running || liveRef.current) return;
+    const ctrl = new AbortController();
+    setLive({ user: null, text: "", thinking: "", step: null });
+    attachStream(
+      conversationId,
+      {
+        // the saved history may be stale (fetched before the question was sent): show the question unless it is already there
+        onUserMessage: (m) => {
+          const known = qc.getQueryData<ConversationDetail>(["conversation", conversationId])?.messages.some((x) => x.id === m.id);
+          if (!known) setLive((l) => (l ? { ...l, user: m.content } : l));
+        },
+        onStatus: (step) => setLive((l) => (l ? { ...l, step } : l)),
+        onThinking: (t) => setLive((l) => (l ? { ...l, thinking: l.thinking + t } : l)),
+        onToken: (t) => setLive((l) => (l ? { ...l, text: l.text + t } : l)),
+      },
+      ctrl.signal,
+    )
+      .catch((e) => {
+        if (!ctrl.signal.aborted) setError(e);
+      })
+      .finally(async () => {
+        if (ctrl.signal.aborted) return;
+        await Promise.all([qc.invalidateQueries({ queryKey: ["conversation", conversationId] }), qc.invalidateQueries({ queryKey: ["conversations"] })]);
+        setLive(null);
+      });
+    return () => {
+      ctrl.abort();
+      liveRef.current = null; // lets a re-run (e.g. React strict mode) attach again
+    };
+  }, [conversationId, running, qc]);
 
   // First message of a brand-new chat: conversation was created on /chat, stream starts here after navigation.
   useEffect(() => {
@@ -102,7 +142,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
 
   async function submit() {
     const content = draft.trim();
-    if (!content || live) return;
+    if (!content || live || status.data?.indexing) return;
     setDraft("");
     if (!conversationId) {
       try {
@@ -180,7 +220,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
 
           {live ? (
             <>
-              <MessageBubble message={{ role: "user", content: live.user, citations: [], meta: {} }} />
+              {live.user !== null ? <MessageBubble message={{ role: "user", content: live.user, citations: [], meta: {} }} /> : null}
               {live.thinking ? <div className="ps-11"><ThinkingPanel text={live.thinking} streaming={!live.text} /></div> : null}
               {live.text ? (
                 <MessageBubble message={{ role: "assistant", content: live.text, citations: [], meta: {} }} streaming />
@@ -229,6 +269,8 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
             onChange={setDraft}
             onSubmit={() => void submit()}
             busy={!!live}
+            trailing={<ContextUsage messages={messages} contextWindow={status.data?.context_window} />}
+            lockedReason={status.data?.indexing ? "مستندات در حال ایندکس شدن است؛ چت پس از پایان ایندکس فعال می‌شود…" : undefined}
             placeholder={teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}
           />
           <p className="text-center text-[11px] text-muted-foreground">

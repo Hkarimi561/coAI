@@ -1,7 +1,9 @@
 """Persistence around the workflow: turns, feedback loop, candidate solutions."""
 
+import json
 import logging
 import re
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -15,12 +17,12 @@ from app.db import SessionLocal
 from app.models import Conversation, Feedback, Message, Solution, ToolCall, TurnEvent, User
 from app.redaction import redact, redact_obj
 from app.schemas import MessageOut
-from app.services import answer_cache, memory
+from app.services import answer_cache, command_safety, memory
 from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.lessons import TEACH_PROMPT
 from app.services.llm import LLMError
-from app.services.workflow import Emit, TroubleshootingWorkflow, TurnState
+from app.services.workflow import Emit, TroubleshootingWorkflow, TurnState, confidence_of
 from app.textnorm import truncate_middle
 
 log = logging.getLogger(__name__)
@@ -36,6 +38,17 @@ ASK_FOR_ERROR = (
     "با استفاده از اطلاعات جدید و بدون تکرار پیشنهادهای قبلی دوباره جستجو می‌کنم."
 )
 CONFIRM_ACK = "عالی! راه‌حل به‌عنوان «راه‌حل تأییدشده» ثبت شد و برای بازبینی ادمین در صف قرار گرفت. ممنون از بازخورد شما."
+
+
+def _usage_meta(usage: dict[str, int] | None, prompt_chars: int, output_text: str) -> dict[str, Any]:
+    """Token usage of one turn: as reported by the LLM server, else a rough estimate (~3.2 chars per token)."""
+    if usage:
+        p, c, est = usage["prompt_tokens"], usage["completion_tokens"], False
+    elif prompt_chars:
+        p, c, est = round(prompt_chars / 3.2), round(len(output_text) / 3.2), True
+    else:  # served from the answer cache: no model call
+        p, c, est = 0, 0, False
+    return {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c, "estimated": est}
 
 
 def _history_for_llm(rows: list[Message]) -> list[dict[str, str]]:
@@ -85,6 +98,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
         await _workflow.run(st, emit)
 
         sig = st.signature
+        risky = command_safety.scan(st.answer)
         meta = {
             "awaiting_feedback": (bool(st.items) or st.cache_hit) and not st.llm_error,
             "primary_source": st.primary_source,
@@ -92,6 +106,12 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             "signature_key": sig.key if sig else None,
             "refs": st.refs,
             "notes": st.notes,
+            "timings": _workflow.timings(st),
+            **({"confidence": confidence_of(st)} if not st.llm_error else {}),  # no badge when the model failed (the fallback only lists sources)
+            **({"risky_commands": risky} if risky else {}),
+            **({"skills": [n for n, _ in st.skills]} if st.skills else {}),
+            **({"mcp_calls": st.mcp_calls} if st.mcp_calls else {}),
+            "usage": _usage_meta(st.usage, st.est_prompt_chars, st.answer + st.thinking),
             **({"answer_cache": "hit"} if st.cache_hit else {}),
             **({"answer_cache_key": st.cache_key} if st.cache_key else {}),
             **({"refreshed": True} if st.refresh else {}),
@@ -144,13 +164,25 @@ async def _teach_turn(conversation_id: uuid.UUID, emit: Emit) -> None:
     chunks: list[str] = []
     thoughts: list[str] = []
     llm_error = None
+    usage: dict[str, int] | None = None
+    t0 = time.monotonic()
+    first_any = first_think = last_think = first_ans = None
+    messages = [{"role": "system", "content": TEACH_PROMPT}, *history]
     await emit("status", {"step": "generate"})
     try:
-        async for channel, piece in get_llm().stream([{"role": "system", "content": TEACH_PROMPT}, *history]):
+        async for channel, piece in get_llm().stream(messages):
+            now = time.monotonic()
+            if channel == "usage":
+                u = json.loads(piece)
+                usage = {"prompt_tokens": int(u.get("prompt_tokens", 0)), "completion_tokens": int(u.get("completion_tokens", 0))}
+                continue
+            first_any = first_any or now
             if channel == "think":
+                first_think, last_think = first_think or now, now
                 thoughts.append(piece)
                 await emit("thinking", {"text": piece})
             else:
+                first_ans = first_ans or now
                 chunks.append(piece)
                 await emit("token", {"text": piece})
     except LLMError as exc:
@@ -158,7 +190,17 @@ async def _teach_turn(conversation_id: uuid.UUID, emit: Emit) -> None:
         if not chunks:
             chunks.append("⚠️ مدل زبانی در دسترس نیست؛ پیام شما ذخیره شد و همچنان می‌توانید آن را برای تأیید ادمین ارسال کنید.")
             await emit("token", {"text": chunks[0]})
-    meta: dict[str, Any] = {"kind": "teach"}
+    t_end = time.monotonic()
+    meta: dict[str, Any] = {
+        "kind": "teach",
+        "timings": {
+            "total_ms": int((t_end - t0) * 1000), "search_ms": 0, "generate_ms": int((t_end - t0) * 1000),
+            "prefill_ms": int(((first_any or t_end) - t0) * 1000),
+            "thinking_ms": int(((last_think - first_think) if first_think and last_think else 0) * 1000),
+            "response_ms": int((t_end - (first_ans or t_end)) * 1000),
+        },
+        "usage": _usage_meta(usage, sum(len(m["content"]) for m in messages), "".join(chunks) + "".join(thoughts)),
+    }
     if thoughts:
         meta["thinking"] = redact("".join(thoughts)).strip()[:30000]
     if llm_error:

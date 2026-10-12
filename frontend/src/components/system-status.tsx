@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/auth";
 import type { ComponentKey, SystemStatus } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 export const COMPONENT_LABEL: Record<ComponentKey, string> = {
   llm: "مدل زبانی (LLM)",
@@ -23,7 +23,7 @@ export function useSystemStatus() {
   return useQuery({
     queryKey: ["system-status"],
     queryFn: () => api.get<SystemStatus>("/system/status"),
-    refetchInterval: 20_000,
+    refetchInterval: (q) => (q.state.data?.indexing ? 3_000 : 20_000),
     staleTime: 10_000,
   });
 }
@@ -78,6 +78,11 @@ export function SystemStatusBar() {
   if (!data || data.assistant_ready) return null;
   const { llm, embeddings } = data.components;
   const problems: string[] = [];
+  if (data.indexing) {
+    const p = data.index_progress;
+    const counter = p?.running && p.total ? ` (${formatNumber(p.done)} از ${formatNumber(p.total)})` : "";
+    problems.push(`مستندات در حال ایندکس شدن است${counter}؛ چت تا پایان ایندکس غیرفعال است`);
+  }
   if (llm.ok !== true) problems.push("مدل زبانی در دسترس نیست");
   if (embeddings.ok === false) problems.push("مدل Embedding بارگذاری نشده است (ایندکس و جستجوی مستندات کار نمی‌کند)");
   if (embeddings.ok === null) problems.push("مدل Embedding هنوز در حال آماده‌سازی است");
@@ -91,6 +96,34 @@ export function SystemStatusBar() {
       ) : (
         "لطفاً به مدیر سیستم اطلاع دهید."
       )}
+    </div>
+  );
+}
+
+/** Progress bar + the file currently being indexed (documents page). */
+export function IndexProgress() {
+  const { data } = useSystemStatus();
+  const p = data?.index_progress;
+  if (!data?.indexing) return null;
+  const pct = p?.running && p.total ? Math.round((p.done / p.total) * 100) : 0;
+  return (
+    <div role="status" className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{p?.running ? "در حال ایندکس مستندات…" : "آماده‌سازی ایندکس…"}</span>
+        {p?.running ? (
+          <span className="text-xs text-muted-foreground">
+            {formatNumber(p.done)} از {formatNumber(p.total)} ({formatNumber(pct)}٪)
+          </span>
+        ) : null}
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+      </div>
+      {p?.current ? (
+        <div className="ltr truncate text-xs text-muted-foreground" title={p.current}>
+          {p.current}
+        </div>
+      ) : null}
     </div>
   );
 }

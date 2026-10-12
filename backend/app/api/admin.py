@@ -239,6 +239,21 @@ async def update_document(doc_id: uuid.UUID, body: UpdateDocIn, session: AsyncSe
     return _doc_out(doc)
 
 
+@router.post("/documents/{doc_id}/reindex", response_model=DocumentOut)
+async def reindex_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> DocumentOut:
+    """Re-chunk and re-embed a single document from the file on disk (forced, ignores the content hash)."""
+    doc = await session.get(Document, doc_id)
+    full = ingestion.docs_root() / doc.path if doc else None
+    if doc is None or not full or not full.exists():
+        raise HTTPException(404, "Document not found")
+    raw = await asyncio.to_thread(full.read_text, encoding="utf-8")
+    try:
+        doc = await ingestion.index_content(session, doc.path, raw, source=doc.source, force=True)
+    except Exception as exc:
+        raise HTTPException(502, f"Indexing failed: {exc}") from exc
+    return _doc_out(doc)
+
+
 @router.delete("/documents/{doc_id}", status_code=204)
 async def delete_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
     doc = await session.get(Document, doc_id)

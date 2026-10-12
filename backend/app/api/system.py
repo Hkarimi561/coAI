@@ -13,7 +13,7 @@ from app.models import Document, User
 from app.redaction import redact
 from app.redis_client import get_redis
 from app.security import get_current_user
-from app.services import settings_store
+from app.services import ingestion, settings_store
 from app.services.ci import get_ci
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.docker_inspector import DockerError, get_docker
@@ -107,7 +107,12 @@ async def status(user: User = Depends(get_current_user)) -> dict[str, Any]:
     )
     admin = user.role == "admin"
     comps = {n: {"ok": ok, "detail": redact(detail) if admin else ""} for n, (ok, detail) in zip(names, results, strict=True)}
-    out: dict[str, Any] = {"components": comps, "assistant_ready": bool(comps["llm"]["ok"] and comps["embeddings"]["ok"])}
+    indexing = await ingestion.is_indexing()
+    out: dict[str, Any] = {
+        "components": comps, "indexing": indexing, "index_progress": dict(ingestion.progress),
+        "context_window": await get_llm().context_window(),
+        "assistant_ready": bool(comps["llm"]["ok"] and comps["embeddings"]["ok"] and not indexing),
+    }
     if admin:
         try:
             async with SessionLocal() as s:

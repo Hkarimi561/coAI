@@ -115,6 +115,18 @@ services:
       retries: 10
       start_period: 60s
 
+  # Sample MCP server with read-only DevOps checks. Add http://sample-mcp:9100/mcp in Admin -> MCP servers.
+  # Reuses the backend image (it already has the `mcp` package); remove this service if you do not need it.
+  sample-mcp:
+    image: devops-ai-backend
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      - backend
+    entrypoint: ["python", "/samples/devops_tools.py"]
+    volumes:
+      - ./mcp-samples:/samples:ro
+
   frontend:
     build:
       context: ./frontend

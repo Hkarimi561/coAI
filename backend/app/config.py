@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.2
     llm_timeout_s: float = 180.0
     llm_num_ctx: int = 8192
+    skill_min_score: float = 0.86  # similarity needed to auto-load a skill for a question
+    llm_context_tokens: int = 0  # context window shown in the chat usage popover; 0 = ask LM Studio, else LLM_NUM_CTX
+    llm_reasoning_effort: str = ""  # OpenAI-compatible servers (LM Studio): none | low | medium | high; empty = model default
     llm_think: bool = False  # Ollama only: enable "thinking" mode for reasoning models
     llm_grader_enabled: bool = False  # extra LLM call to validate that retrieved context really answers the question
 

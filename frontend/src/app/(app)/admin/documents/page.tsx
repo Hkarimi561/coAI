@@ -1,19 +1,18 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FilePlus2, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import { FilePlus2, RefreshCw, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { DocTree } from "@/components/admin/doc-tree";
 import { DocumentEditor, type EditorTarget } from "@/components/admin/document-editor";
-import { SystemStatusBar } from "@/components/system-status";
-import { Badge } from "@/components/ui/badge";
+import { IndexProgress, SystemStatusBar, useSystemStatus } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import type { DocumentFull, DocumentRow, ReindexReport } from "@/lib/types";
-import { formatDateTime, formatNumber } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
 
 const NEW_TEMPLATE = `# عنوان رانبوک
 
@@ -37,7 +36,13 @@ export default function DocumentsPage() {
   const [toDelete, setToDelete] = useState<DocumentRow | null>(null);
   const [report, setReport] = useState<string | null>(null);
 
-  const docs = useQuery({ queryKey: ["admin-documents"], queryFn: () => api.get<DocumentRow[]>("/admin/documents") });
+  const status = useSystemStatus();
+  const indexing = !!status.data?.indexing;
+  const docs = useQuery({
+    queryKey: ["admin-documents"],
+    queryFn: () => api.get<DocumentRow[]>("/admin/documents"),
+    refetchInterval: indexing ? 4_000 : false,
+  });
   const refresh = () => qc.invalidateQueries({ queryKey: ["admin-documents"] });
 
   const reindex = useMutation({
@@ -67,6 +72,14 @@ export default function DocumentsPage() {
       setToDelete(null);
       void refresh();
     },
+  });
+  const reindexOne = useMutation({
+    mutationFn: (id: string) => api.post<DocumentRow>(`/admin/documents/${id}/reindex`),
+    onSuccess: (d) => {
+      setReport(`✓ ${d.path} (${d.chunk_count} chunk)`);
+      void refresh();
+    },
+    onError: () => void refresh(),
   });
   const open = useMutation({
     mutationFn: (id: string) => api.get<DocumentFull>(`/admin/documents/${id}`),
@@ -107,8 +120,9 @@ export default function DocumentsPage() {
         فقط فایل‌های جدید یا تغییرکرده دوباره ایندکس می‌شوند (بر اساس هش محتوا). فایل‌های حذف‌شده از دیسک از Qdrant هم پاک می‌شوند.
       </p>
 
+      <IndexProgress />
       <SystemStatusBar />
-      <ErrorBanner error={docs.error ?? reindex.error ?? upload.error ?? open.error ?? remove.error} />
+      <ErrorBanner error={docs.error ?? reindex.error ?? upload.error ?? reindexOne.error ?? open.error ?? remove.error} />
       {report ? <pre className="whitespace-pre-wrap rounded-md bg-muted p-3 text-xs text-left">{report}</pre> : null}
 
       {editor ? (
@@ -126,57 +140,14 @@ export default function DocumentsPage() {
       {docs.isLoading ? <Spinner className="mx-auto" /> : null}
       {docs.data && docs.data.length === 0 ? <Empty>سندی ایندکس نشده است. فایل‌ها را در پوشه‌ی docs بگذارید و «ایندکس تغییرات» را بزنید.</Empty> : null}
       {docs.data && docs.data.length > 0 ? (
-        <Card className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-muted text-xs text-muted-foreground">
-              <tr>
-                <th className="p-3 text-start">سند</th>
-                <th className="p-3 text-start">منبع</th>
-                <th className="p-3 text-start">Chunk</th>
-                <th className="p-3 text-start">وضعیت</th>
-                <th className="p-3 text-start">آخرین ایندکس</th>
-                <th className="p-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {docs.data.map((d) => (
-                <tr key={d.id} className="border-t border-border">
-                  <td className="p-3">
-                    <div className="font-medium" dir="auto">
-                      {d.title}
-                    </div>
-                    <code className="ltr text-xs text-muted-foreground">{d.path}</code>
-                  </td>
-                  <td className="p-3">
-                    <Badge tone={d.source === "promoted" ? "success" : "neutral"}>{d.source}</Badge>
-                  </td>
-                  <td className="p-3">{formatNumber(d.chunk_count)}</td>
-                  <td className="p-3">
-                    {d.status === "indexed" ? (
-                      <Badge tone="success">ایندکس</Badge>
-                    ) : (
-                      <div className="max-w-xs space-y-1">
-                        <Badge tone="danger">خطا در ایندکس</Badge>
-                        <p className="ltr break-words text-[11px] text-danger">{d.error}</p>
-                      </div>
-                    )}
-                  </td>
-                  <td className="p-3 text-muted-foreground">{formatDateTime(d.indexed_at)}</td>
-                  <td className="p-3">
-                    <div className="flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" aria-label="ویرایش" onClick={() => open.mutate(d.id)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button size="icon" variant="ghost" aria-label="حذف" onClick={() => setToDelete(d)}>
-                        <Trash2 className="h-4 w-4 text-danger" />
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <DocTree
+          docs={docs.data}
+          onEdit={(d) => open.mutate(d.id)}
+          onDelete={setToDelete}
+          onReindex={(d) => reindexOne.mutate(d.id)}
+          reindexingId={reindexOne.isPending ? reindexOne.variables : null}
+          currentPath={status.data?.index_progress?.running ? status.data.index_progress.current : null}
+        />
       ) : null}
 
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>

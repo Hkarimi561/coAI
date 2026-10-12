@@ -46,6 +46,23 @@ export interface MessageMeta {
   answer_cache?: "hit";
   refreshed?: boolean;
   llm_error?: string;
+  timings?: {
+    total_ms: number;
+    search_ms: number;
+    tools_ms?: number;
+    docs_ms?: number;
+    cache_ms?: number;
+    web_ms?: number;
+    generate_ms?: number;
+    prefill_ms?: number;
+    thinking_ms: number;
+    response_ms: number;
+  };
+  skills?: string[];
+  mcp_calls?: { server: string | null; tool: string; ok: boolean; ms: number; args?: Record<string, unknown>; result?: string }[];
+  confidence?: "verified" | "live" | "external" | "model";
+  risky_commands?: { command: string; reason: string; severity: "high" | "medium" }[];
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated: boolean };
   [key: string]: unknown;
 }
 
@@ -77,6 +94,7 @@ export interface Memory {
 export interface ConversationDetail {
   conversation: Conversation;
   messages: Message[];
+  active?: boolean;
   memory?: Memory | null;
 }
 
@@ -199,6 +217,11 @@ export interface SystemStatus {
   /** ok: true = healthy, false = failing, null = loading / disabled / not configured */
   components: Record<ComponentKey, { ok: boolean | null; detail: string }>;
   assistant_ready: boolean;
+  /** true while documents are being indexed - chat is disabled meanwhile */
+  indexing?: boolean;
+  /** context length of the loaded model, tokens */
+  context_window?: number;
+  index_progress?: { running: boolean; total: number; done: number; current: string | null };
   documents?: Record<string, number>;
 }
 
@@ -261,4 +284,45 @@ export interface ContainerAuditRow {
   action: string;
   result: string;
   created_at: string;
+}
+
+export interface McpServerRow {
+  id: string;
+  name: string;
+  transport: "http" | "sse";
+  url: string;
+  header_names: string[];
+  enabled: boolean;
+  tools: { name: string; description: string }[];
+  enabled_tools: string[];
+  last_error: string | null;
+  synced_at: string | null;
+}
+
+export interface SkillRow {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  enabled: boolean;
+  updated_at: string | null;
+}
+
+export interface GapReport {
+  days: number;
+  from: string;
+  to: string;
+  turns: number;
+  gap_turns: number;
+  gap_rate: number;
+  previous: { turns: number; gap_turns: number; gap_rate: number };
+  kinds: { no_source: number; web_fallback: number; rejected: number };
+  clusters: {
+    title: string;
+    count: number;
+    score: number;
+    kinds: { no_source: number; web_fallback: number; rejected: number };
+    last_seen: string;
+    examples: { query: string; conversation_id: string; at: string }[];
+  }[];
 }

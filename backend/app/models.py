@@ -214,3 +214,35 @@ class ContainerAudit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user: Mapped[User] = relationship(lazy="joined")
+
+
+class McpServer(Base):
+    """Remote MCP server (streamable HTTP or SSE). Only tools listed in `enabled_tools` can ever be called by the assistant."""
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(String(48), unique=True)  # slug, used as tool-name prefix
+    transport: Mapped[str] = mapped_column(String(16), default="http")  # http | sse
+    url: Mapped[str] = mapped_column(String(500))
+    headers: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)  # e.g. Authorization; never returned by the API
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    tools: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)  # last discovered: name, description, input_schema
+    enabled_tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # admin allow-list (tool names)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = _now()
+
+
+class Skill(Base):
+    """Admin-authored playbook (SKILL.md style). The assistant loads the relevant ones automatically for a question."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    description: Mapped[str] = mapped_column(Text)  # "use when ..." - this is what gets matched against the question
+    instructions: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = _now()
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

@@ -73,6 +73,11 @@ class VectorStore:
         flt = models.Filter(must=[models.FieldCondition(key=k, match=models.MatchValue(value=v)) for k, v in match.items()])
         await self.client.delete(self.collection, points_selector=models.FilterSelector(filter=flt), wait=True)
 
+    async def count_where(self, **match: str) -> int:
+        await self.ensure()
+        flt = models.Filter(must=[models.FieldCondition(key=k, match=models.MatchValue(value=v)) for k, v in match.items()])
+        return (await self.client.count(self.collection, count_filter=flt, exact=True)).count
+
     async def search(
         self, vector: list[float], kinds: list[str], limit: int = 5, exclude_refs: list[str] | None = None
     ) -> list[Hit]:
