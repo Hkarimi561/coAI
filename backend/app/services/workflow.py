@@ -141,6 +141,7 @@ class TurnState:
     skills: list[tuple[str, str]] = field(default_factory=list)  # (name, instructions) of auto-selected skills
     mcp_calls: list[dict[str, Any]] = field(default_factory=list)
     tools_enabled: bool = False
+    mcp_command: tuple[str, str | None] | None = None  # (server, tool) forced by a /server[@tool] command
 
     def record(self, tool: str, inp: dict, out: dict, status: str, started: float) -> None:
         self.tool_calls.append(
@@ -280,6 +281,15 @@ class TroubleshootingWorkflow:
             await settings_store.get_bool("answer_cache_enabled") and not has_live and st.convo_state.get("attempts", 0) == 0
             and (sig.is_error or len(st.message) >= 20) and not followup
         )
+        if st.mcp_command:
+            server, tool = st.mcp_command
+            st.cacheable, st.cache_key = False, None  # live tool data must never be replayed
+            st.notes.append(
+                f"The user explicitly invoked MCP server '{server}'" + (f" tool '{tool}'" if tool else "")
+                + ". You MUST call " + ("that tool" if tool else "the most suitable tool of that server")
+                + " now, deriving the arguments from the user's request, and base your answer on its result. "
+                "Do not answer from memory. If the call fails, say so plainly and show the error."
+            )
         if st.cacheable:
             st.cache_key = await answer_cache.make_key(sig.key, st.force_web)
         return "check_answer_cache"
@@ -310,6 +320,9 @@ class TroubleshootingWorkflow:
     async def node_retrieve_local(self, st: TurnState, emit: Emit) -> str:
         t0 = time.monotonic()
         await self._select_skills(st)
+        if st.mcp_command:
+            st.record("local_docs", {"query": st.semantic_query[:300]}, {"skipped": "MCP command"}, "skipped", t0)
+            return "generate"
         if st.force_web:
             st.record("local_docs", {"query": st.semantic_query[:300]}, {"skipped": "user asked for web research"}, "skipped", t0)
             return "retrieve_cache"
@@ -568,7 +581,7 @@ class TroubleshootingWorkflow:
     async def node_generate(self, st: TurnState, emit: Emit) -> str | None:
         # With no sources at all the model still answers from its own knowledge (SYSTEM_PROMPT rule 1).
         # If the model says the context is insufficient and the web has not been tried yet, search the web and answer again.
-        marker_mode = await get_websearch().is_enabled() and not st.web_attempted
+        marker_mode = await get_websearch().is_enabled() and not st.web_attempted and not st.mcp_command
         chunks: list[str] = []
         t_gen = time.monotonic()
         first_any = first_think = last_think = first_ans = None
@@ -577,6 +590,9 @@ class TroubleshootingWorkflow:
             tool_defs = await mcp_client.enabled_tools() if get_settings().llm_provider != "ollama" else []
         except Exception:
             log.exception("could not load MCP tools")
+        if st.mcp_command:  # only the commanded server / tool is offered
+            srv, tl = st.mcp_command
+            tool_defs = [d for d in tool_defs if d.server_name == srv and (tl is None or d.tool == tl)]
         st.tools_enabled = bool(tool_defs)
         messages = self._build_messages(st, marker_mode)
         st.est_prompt_chars += sum(len(m.get("content") or "") for m in messages)

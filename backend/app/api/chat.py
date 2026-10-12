@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import SessionLocal, get_session
-from app.models import Conversation, Lesson, Message, User
+from app.models import Conversation, Lesson, McpServer, Message, User
 from app.redis_client import get_redis, rate_limit
 from app.schemas import ConversationOut, CreateConversationIn, FeedbackIn, FeedbackOut, LessonOut, MessageOut, SendMessageIn
 from app.security import get_current_user
-from app.services import ingestion
+from app.services import ingestion, mcp_command
 from app.services.chat_service import run_turn, submit_feedback
 from app.services.lessons import submit_lesson
 
@@ -216,3 +216,13 @@ async def download_document(path: str, user: User = Depends(get_current_user)) -
     if not full.is_file():
         raise HTTPException(404, "Document not found")
     return FileResponse(full, media_type="text/markdown; charset=utf-8", filename=full.name)
+
+
+@router.get("/mcp/commands")
+async def mcp_commands(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
+    """Slash commands for the message box: enabled MCP servers with a hint and their allow-listed tools (no URLs or headers)."""
+    hints = {s.name: s.description for s in (await session.execute(select(McpServer).where(McpServer.enabled.is_(True)))).scalars()}
+    out = await mcp_command.available()
+    for s in out:
+        s["hint"] = hints.get(s["server"]) or ""
+    return out

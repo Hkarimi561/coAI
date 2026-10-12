@@ -53,6 +53,7 @@ async def background_index() -> None:
 async def lifespan(_: FastAPI):
     await seed_admin()
     get_embedder().warmup()  # start loading/downloading the embedding model right away
+    await get_redis().delete("lock:ingest")  # the previous process (if any) is gone; its lock would block indexing for minutes
     ingestion.startup_pending = settings.auto_index_on_start
     task = asyncio.create_task(background_index()) if settings.auto_index_on_start else None
     yield

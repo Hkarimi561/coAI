@@ -28,16 +28,16 @@ export default function McpPage() {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [toDelete, setToDelete] = useState<McpServerRow | null>(null);
-  const [form, setForm] = useState({ name: "", transport: "http", url: "", headers: "" });
+  const [form, setForm] = useState({ name: "", description: "", transport: "http", url: "", headers: "" });
 
   const servers = useQuery({ queryKey: ["admin-mcp"], queryFn: () => api.get<McpServerRow[]>("/admin/mcp") });
   const refresh = () => qc.invalidateQueries({ queryKey: ["admin-mcp"] });
 
   const create = useMutation({
-    mutationFn: () => api.post<McpServerRow>("/admin/mcp", { name: form.name, transport: form.transport, url: form.url, headers: parseHeaders(form.headers) }),
+    mutationFn: () => api.post<McpServerRow>("/admin/mcp", { name: form.name, description: form.description, transport: form.transport, url: form.url, headers: parseHeaders(form.headers) }),
     onSuccess: async (s) => {
       setAdding(false);
-      setForm({ name: "", transport: "http", url: "", headers: "" });
+      setForm({ name: "", description: "", transport: "http", url: "", headers: "" });
       await refresh();
       sync.mutate(s.id); // discover the tools right away
     },
@@ -45,6 +45,10 @@ export default function McpPage() {
   const sync = useMutation({ mutationFn: (id: string) => api.post<McpServerRow>(`/admin/mcp/${id}/sync`), onSettled: () => void refresh() });
   const toggle = useMutation({
     mutationFn: (v: { id: string; enabled: boolean }) => api.put<McpServerRow>(`/admin/mcp/${v.id}`, { enabled: v.enabled }),
+    onSuccess: () => void refresh(),
+  });
+  const describe = useMutation({
+    mutationFn: (v: { id: string; description: string }) => api.put<McpServerRow>(`/admin/mcp/${v.id}`, { description: v.description }),
     onSuccess: () => void refresh(),
   });
   const setTools = useMutation({
@@ -91,6 +95,19 @@ export default function McpPage() {
               <Trash2 className="h-4 w-4 text-danger" />
             </Button>
           </div>
+          <Input
+            key={`${s.id}-${s.description}`}
+            dir="auto"
+            maxLength={200}
+            defaultValue={s.description}
+            placeholder="توضیح کوتاه (hint در فهرست دستورهای چت)"
+            aria-label="توضیح کوتاه"
+            className="h-8 text-xs"
+            onBlur={(e) => e.target.value !== s.description && describe.mutate({ id: s.id, description: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">
+            دستور چت: <code dir="ltr">/{s.name}</code> یا <code dir="ltr">/{s.name}@ابزار</code>
+          </p>
           {s.header_names.length ? <p className="text-xs text-muted-foreground">هدرها: {s.header_names.join("، ")} (مقدارها نمایش داده نمی‌شوند)</p> : null}
           {s.last_error ? <p className="ltr whitespace-pre-wrap break-words rounded-md bg-danger/10 p-2 text-xs text-danger">{s.last_error}</p> : null}
           {s.synced_at ? <p className="text-xs text-muted-foreground">آخرین همگام‌سازی: {formatDateTime(s.synced_at)}</p> : null}
@@ -140,6 +157,10 @@ export default function McpPage() {
             <label className="block space-y-1 text-sm">
               <span>نام (حروف کوچک انگلیسی، عدد، - یا _)</span>
               <Input dir="ltr" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="grafana" />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>توضیح کوتاه (hint در فهرست دستورها)</span>
+              <Input dir="auto" maxLength={200} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="بررسی DNS، پورت، HTTP و گواهی SSL" />
             </label>
             <label className="block space-y-1 text-sm">
               <span>نوع اتصال</span>

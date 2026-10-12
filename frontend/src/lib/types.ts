@@ -60,6 +60,7 @@ export interface MessageMeta {
   };
   skills?: string[];
   mcp_calls?: { server: string | null; tool: string; ok: boolean; ms: number; args?: Record<string, unknown>; result?: string }[];
+  mcp_command?: { server: string; tool: string | null };
   confidence?: "verified" | "live" | "external" | "model";
   risky_commands?: { command: string; reason: string; severity: "high" | "medium" }[];
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number; estimated: boolean };
@@ -291,6 +292,7 @@ export interface McpServerRow {
   name: string;
   transport: "http" | "sse";
   url: string;
+  description: string;
   header_names: string[];
   enabled: boolean;
   tools: { name: string; description: string }[];
@@ -325,4 +327,11 @@ export interface GapReport {
     last_seen: string;
     examples: { query: string; conversation_id: string; at: string }[];
   }[];
+}
+
+/** Chat slash command: an enabled MCP server with its allow-listed tools. */
+export interface McpCommand {
+  server: string;
+  hint: string;
+  tools: { name: string; description: string }[];
 }

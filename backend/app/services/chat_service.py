@@ -17,7 +17,7 @@ from app.db import SessionLocal
 from app.models import Conversation, Feedback, Message, Solution, ToolCall, TurnEvent, User
 from app.redaction import redact, redact_obj
 from app.schemas import MessageOut
-from app.services import answer_cache, command_safety, memory
+from app.services import answer_cache, command_safety, mcp_command, memory
 from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.lessons import TEACH_PROMPT
@@ -93,8 +93,20 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             await _teach_turn(conversation_id, emit)
             return
 
+        cmd = mcp_command.parse(redacted)
+        if cmd:  # "/server[@tool] request": force MCP, validated before anything runs
+            error = await mcp_command.resolve(cmd)
+            if error:
+                async with SessionLocal() as session:
+                    msg = Message(conversation_id=conversation_id, role="assistant", content=error, meta={"kind": "mcp_command_error"})
+                    session.add(msg)
+                    await session.commit()
+                    await emit("done", MessageOut.of(msg).model_dump(mode="json"))
+                return
+            effective = cmd.text
         st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh,
-                       user_id=str(user_id) if user_id else None, is_admin=is_admin)
+                       user_id=str(user_id) if user_id else None, is_admin=is_admin,
+                       mcp_command=(cmd.server, cmd.tool) if cmd else None)
         await _workflow.run(st, emit)
 
         sig = st.signature
@@ -107,6 +119,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             "refs": st.refs,
             "notes": st.notes,
             "timings": _workflow.timings(st),
+            **({"mcp_command": {"server": st.mcp_command[0], "tool": st.mcp_command[1]}} if st.mcp_command else {}),
             **({"confidence": confidence_of(st)} if not st.llm_error else {}),  # no badge when the model failed (the fallback only lists sources)
             **({"risky_commands": risky} if risky else {}),
             **({"skills": [n for n, _ in st.skills]} if st.skills else {}),

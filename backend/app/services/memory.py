@@ -137,7 +137,7 @@ async def refresh_summary(conversation_id: uuid.UUID) -> None:
     finally:
         try:
             async with SessionLocal() as session:
-                convo = await session.get(Conversation, conversation_id, with_for_update=True)
+                convo = await session.get(Conversation, conversation_id, with_for_update={"of": Conversation})  # lock only this table (the user relationship is eager-joined)
                 if convo is not None:
                     state = dict(convo.state or {})
                     mem = dict(state.get("memory") or {})

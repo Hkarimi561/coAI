@@ -226,6 +226,7 @@ class McpServer(Base):
     transport: Mapped[str] = mapped_column(String(16), default="http")  # http | sse
     url: Mapped[str] = mapped_column(String(500))
     headers: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)  # e.g. Authorization; never returned by the API
+    description: Mapped[str] = mapped_column(String(200), default="")  # short hint shown in the chat command autocomplete
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)  # last discovered: name, description, input_schema
     enabled_tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # admin allow-list (tool names)

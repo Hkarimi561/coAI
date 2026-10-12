@@ -36,6 +36,7 @@ class McpIn(BaseModel):
     transport: Literal["http", "sse"] = "http"
     url: str = Field(min_length=8, max_length=500)
     headers: dict[str, str] = Field(default_factory=dict)
+    description: str = Field(default="", max_length=200)
     enabled: bool = True
 
 
@@ -43,6 +44,7 @@ class McpUpdate(BaseModel):
     transport: Literal["http", "sse"] | None = None
     url: str | None = Field(default=None, min_length=8, max_length=500)
     headers: dict[str, str] | None = None  # replaces all headers when given
+    description: str | None = Field(default=None, max_length=200)
     enabled: bool | None = None
 
 
@@ -52,7 +54,7 @@ class McpToolsIn(BaseModel):
 
 def _mcp_out(s: McpServer) -> dict[str, Any]:
     return {
-        "id": str(s.id), "name": s.name, "transport": s.transport, "url": s.url, "header_names": sorted((s.headers or {}).keys()),
+        "id": str(s.id), "name": s.name, "description": s.description or "", "transport": s.transport, "url": s.url, "header_names": sorted((s.headers or {}).keys()),
         "enabled": s.enabled, "tools": [{"name": t["name"], "description": t.get("description", "")} for t in s.tools or []],
         "enabled_tools": s.enabled_tools or [], "last_error": s.last_error, "synced_at": s.synced_at.isoformat() if s.synced_at else None,
     }
@@ -83,7 +85,7 @@ async def create_mcp(body: McpIn, session: AsyncSession = Depends(get_session)) 
     name = body.name.strip().lower()
     if not _SLUG.match(name):
         raise HTTPException(422, "Name must be lowercase letters, digits, '-' or '_' (max 48)")
-    s = McpServer(name=name, transport=body.transport, url=_check_url(body.url), headers=body.headers, enabled=body.enabled,
+    s = McpServer(name=name, transport=body.transport, url=_check_url(body.url), headers=body.headers, description=body.description.strip(), enabled=body.enabled,
                   tools=[], enabled_tools=[])
     session.add(s)
     try:
@@ -104,6 +106,8 @@ async def update_mcp(server_id: uuid.UUID, body: McpUpdate, session: AsyncSessio
         s.url = _check_url(body.url)
     if body.headers is not None:
         s.headers = body.headers
+    if body.description is not None:
+        s.description = body.description.strip()
     if body.enabled is not None:
         s.enabled = body.enabled
     await session.commit()

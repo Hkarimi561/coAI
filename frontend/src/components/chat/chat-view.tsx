@@ -17,7 +17,7 @@ import { api } from "@/lib/api";
 import { STEP_LABEL } from "@/lib/labels";
 import { takePendingMessage, setPendingMessage } from "@/lib/pending";
 import { attachStream, streamMessage } from "@/lib/sse";
-import type { Conversation, ConversationDetail, Message } from "@/lib/types";
+import type { Conversation, ConversationDetail, McpCommand, Message } from "@/lib/types";
 
 interface Live {
   /** null when re-attached to a running turn: the user message is already part of the saved history */
@@ -32,6 +32,7 @@ const EXAMPLES = ["چطور Nginx را ریستارت کنم؟", "آخرین خ�
 export function ChatView({ conversationId, mode = "support" }: { conversationId: string | null; mode?: "support" | "teach" }) {
   const qc = useQueryClient();
   const status = useSystemStatus();
+  const mcpCommands = useQuery({ queryKey: ["mcp-commands"], queryFn: () => api.get<McpCommand[]>("/chat/mcp/commands"), staleTime: 60_000 });
   const router = useRouter();
   const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -269,6 +270,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
             onChange={setDraft}
             onSubmit={() => void submit()}
             busy={!!live}
+            commands={teach ? undefined : mcpCommands.data}
             trailing={<ContextUsage messages={messages} contextWindow={status.data?.context_window} />}
             lockedReason={status.data?.indexing ? "مستندات در حال ایندکس شدن است؛ چت پس از پایان ایندکس فعال می‌شود…" : undefined}
             placeholder={teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}

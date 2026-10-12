@@ -30,15 +30,23 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
       >
         {isUser ? (
           // Pasted logs must stay readable: each line picks its own direction, whitespace is preserved.
-          <p className="whitespace-pre-wrap break-words text-[0.95rem] leading-7" dir="auto">
-            {message.content}
-          </p>
+          <UserText text={message.content} />
         ) : (
           <>
             {meta.thinking ? <ThinkingPanel text={meta.thinking} /> : null}
             <Markdown content={message.content} />
             {streaming ? <span className="mt-1 inline-block h-4 w-1.5 animate-pulse bg-primary align-middle" aria-hidden /> : null}
             {!streaming ? <CitationList citations={message.citations} /> : null}
+            {!streaming && meta.mcp_command ? (
+              <div className="mt-3">
+                <Badge tone="info">
+                  <span dir="ltr">
+                    دستور MCP · /{meta.mcp_command.server}
+                    {meta.mcp_command.tool ? `@${meta.mcp_command.tool}` : ""}
+                  </span>
+                </Badge>
+              </div>
+            ) : null}
             {!streaming && meta.skills?.length ? (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {meta.skills?.map((n) => (
@@ -135,5 +143,25 @@ function ConfidenceBadge({ level }: { level: keyof typeof CONFIDENCE }) {
     <span title={c.hint}>
       <Badge tone={c.tone}>{c.text}</Badge>
     </span>
+  );
+}
+
+/** The user's text; a leading MCP command (/server or /server@tool) is highlighted. */
+function UserText({ text }: { text: string }) {
+  const m = /^(\s*)(\/[A-Za-z0-9][A-Za-z0-9_-]*(?:@[A-Za-z0-9_.:-]+)?)(?=\s|$)/.exec(text);
+  return (
+    <p className="whitespace-pre-wrap break-words text-[0.95rem] leading-7" dir="auto">
+      {m ? (
+        <>
+          {m[1]}
+          <span dir="ltr" className="rounded bg-primary/10 px-1.5 py-0.5 font-semibold text-primary">
+            {m[2]}
+          </span>
+          {text.slice(m[0].length)}
+        </>
+      ) : (
+        text
+      )}
+    </p>
   );
 }
