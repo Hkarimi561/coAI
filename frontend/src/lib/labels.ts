@@ -20,6 +20,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   web_fresh: "وب (جستجوی جدید)",
   docker: "داکر",
   ci: "CI",
+  mcp: "ابزار MCP",
   none: "بدون منبع",
 };
 

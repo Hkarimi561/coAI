@@ -110,6 +110,8 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
         await _workflow.run(st, emit)
 
         sig = st.signature
+        if st.primary_source == "none" and any(c["ok"] for c in st.mcp_calls):
+            st.primary_source = "mcp"  # answered from live MCP tool output, not "no source"
         risky = command_safety.scan(st.answer)
         meta = {
             "awaiting_feedback": (bool(st.items) or st.cache_hit) and not st.llm_error,
