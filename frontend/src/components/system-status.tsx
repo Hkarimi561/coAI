@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
 import { api } from "@/lib/api";
-import { useMe } from "@/lib/auth";
+import { can, useMe } from "@/lib/auth";
 import type { ComponentKey, SystemStatus } from "@/lib/types";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -54,15 +54,15 @@ export function HeaderStatus() {
   const { llm, embeddings } = data.components;
   const content = (
     <span className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1 text-xs">
-      <span className="flex items-center gap-1.5" title={me?.role === "admin" ? llm.detail : undefined}>
+      <span className="flex items-center gap-1.5" title={can(me, "system.view") ? llm.detail : undefined}>
         <Dot ok={llm.ok} /> هوش مصنوعی: {stateText(llm.ok)}
       </span>
-      <span className="flex items-center gap-1.5" title={me?.role === "admin" ? embeddings.detail : undefined}>
+      <span className="flex items-center gap-1.5" title={can(me, "system.view") ? embeddings.detail : undefined}>
         <Dot ok={embeddings.ok} /> جستجوی معنایی: {stateText(embeddings.ok, "در حال آماده‌سازی")}
       </span>
     </span>
   );
-  return me?.role === "admin" ? (
+  return can(me, "system.view") ? (
     <Link href="/admin/status" aria-label="وضعیت سیستم">
       {content}
     </Link>
@@ -89,7 +89,7 @@ export function SystemStatusBar() {
   return (
     <div role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
       {problems.join(" · ")}.{" "}
-      {me?.role === "admin" ? (
+      {can(me, "system.view") ? (
         <Link href="/admin/status" className="underline">
           جزئیات و راه‌حل
         </Link>

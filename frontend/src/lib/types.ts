@@ -2,9 +2,30 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: "admin" | "user";
   is_active: boolean;
   created_at?: string;
+  roles: RoleRef[];
+  permissions: string[];
+}
+
+export interface RoleRef {
+  id: string;
+  name: string;
+}
+
+export interface Role extends RoleRef {
+  description: string;
+  is_system: boolean;
+  locked: boolean; // the admin role: always has every permission
+  permissions: string[];
+  container_grants: ContainerGrant[];
+  user_count: number;
+}
+
+export interface PermissionInfo {
+  key: string;
+  group: string;
+  label: string;
 }
 
 export type ConversationStatus = "unresolved" | "pending_review" | "resolved";
@@ -261,6 +282,11 @@ export interface Lesson {
 }
 
 export type ContainerLevel = "logs" | "actions";
+
+export interface ContainerGrant {
+  container: string;
+  level: ContainerLevel;
+}
 export type ContainerAction = "start" | "stop" | "restart";
 
 export interface ContainerInfo {
@@ -275,7 +301,7 @@ export interface ContainerPermissions {
   enabled: boolean;
   error: string | null;
   containers: { name: string; image: string | null; state: string | null }[];
-  users: { id: string; email: string; name: string; role: "admin" | "user"; is_active: boolean; grants: { container: string; level: ContainerLevel }[] }[];
+  users: { id: string; email: string; name: string; roles: string[]; is_active: boolean; full_access: ContainerLevel | null; }[];
 }
 
 export interface ContainerAuditRow {

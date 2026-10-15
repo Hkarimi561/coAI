@@ -13,8 +13,9 @@ from sqlalchemy import func, select
 
 from app.db import SessionLocal, engine
 from app.models import User
+from app.permissions import ADMIN_ROLE
 from app.security import hash_password
-from app.services import ingestion
+from app.services import ingestion, rbac
 
 
 async def create_admin(email: str, name: str, password: str | None) -> int:
@@ -24,12 +25,15 @@ async def create_admin(email: str, name: str, password: str | None) -> int:
         return 2
     email = email.strip().lower()
     async with SessionLocal() as session:
+        admin_role = (await rbac.ensure_system_roles(session))[ADMIN_ROLE]
         user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
         if user:
-            user.role, user.is_active, user.password_hash = "admin", True, hash_password(password)
+            user.is_active, user.password_hash = True, hash_password(password)
+            if admin_role not in user.roles:
+                user.roles.append(admin_role)
             print(f"Updated existing user {email} -> admin")
         else:
-            session.add(User(email=email, name=name, password_hash=hash_password(password), role="admin"))
+            session.add(User(email=email, name=name, password_hash=hash_password(password), roles=[admin_role]))
             print(f"Created admin {email}")
         await session.commit()
     return 0

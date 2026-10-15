@@ -148,7 +148,7 @@ gather_tools → plan_queries → check_answer_cache → retrieve_local ─┐
 | Layer | Control |
 |---|---|
 | Authentication | Email + password, bcrypt hashes, JWT; admins create users (no public sign-up) |
-| Authorization | Admin / user roles; per-user container grants; per-tool MCP allow-list |
+| Authorization | Roles and permissions (a user has many roles, a role has many permissions; catalog in `app/permissions.py`); per-user container grants; per-tool MCP allow-list |
 | Data protection | Secret redaction before DB storage and LLM calls |
 | Docker access | Read-only socket proxy; actions are opt-in and audited |
 | Abuse | Rate limiting (Redis) on chat and login |

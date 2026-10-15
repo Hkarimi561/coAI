@@ -5,13 +5,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import func, select, text
 
-from app.api import admin, admin_ext, auth, chat, container_admin, system
+from app.api import admin, admin_ext, auth, chat, container_admin, rbac as rbac_api, system
 from app.services import builtin_mcp, skills
 from app.config import get_settings
+from app.permissions import ADMIN_ROLE
 from app.db import SessionLocal, engine
 from app.models import User
 from app.redis_client import get_redis
 from app.security import hash_password
+from app.services import rbac
 from app.services import ingestion
 from app.services.container import get_embedder, get_vectorstore
 
@@ -25,10 +27,11 @@ async def seed_admin() -> None:
         return
     email = settings.admin_email.strip().lower()
     async with SessionLocal() as session:
+        roles = await rbac.ensure_system_roles(session)
         exists = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one_or_none()
         if exists:
             return
-        session.add(User(email=email, name=settings.admin_name, password_hash=hash_password(settings.admin_password), role="admin"))
+        session.add(User(email=email, name=settings.admin_name, password_hash=hash_password(settings.admin_password), roles=[roles[ADMIN_ROLE]]))
         await session.commit()
         log.info("Seeded admin user %s", email)
 
@@ -51,6 +54,8 @@ async def background_index() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    async with SessionLocal() as session:
+        await rbac.ensure_system_roles(session)  # built-in roles exist and the admin role holds every known permission
     await seed_admin()
     get_embedder().warmup()  # start loading/downloading the embedding model right away
     await get_redis().delete("lock:ingest")  # the previous process (if any) is gone; its lock would block indexing for minutes
@@ -71,6 +76,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(admin_ext.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
 app.include_router(container_admin.router, prefix="/api")
+app.include_router(rbac_api.router, prefix="/api")
 
 
 @app.get("/api/health")

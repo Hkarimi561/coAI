@@ -41,7 +41,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const nav = [
     { href: "/chat", label: "گفتگو", icon: MessageSquare, show: true },
     { href: "/lessons", label: "آموزش‌های من", icon: GraduationCap, show: true },
-    { href: "/admin", label: "مدیریت", icon: Shield, show: me.role === "admin" },
+    { href: "/admin", label: "مدیریت", icon: Shield, show: me.permissions.length > 0 },
   ];
 
   return (

@@ -46,7 +46,7 @@ async def _caller(ctx: Context) -> User:
     if not token:
         raise ToolError("No user identity was provided; this server must be called through the assistant.")
     try:
-        user_id, _role = decode_mcp_token(token)
+        user_id = decode_mcp_token(token)
     except Exception:  # noqa: BLE001
         raise ToolError("The user identity is invalid or expired.") from None
     async with SessionLocal() as s:

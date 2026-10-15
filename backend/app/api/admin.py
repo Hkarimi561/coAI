@@ -7,18 +7,17 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, exists, func, or_, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.models import Conversation, Document, Feedback, Lesson, Message, Solution, ToolCall, TurnEvent, User, WebCacheEntry
-from app.schemas import ConversationOut, LessonEdit, LessonOut, MessageOut, UserCreate, UserOut, UserUpdate
-from app.security import hash_password, require_admin
+from app.schemas import ConversationOut, LessonEdit, LessonOut, MessageOut
+from app.security import get_current_user, require_permission
 from app.services import analytics, ingestion, lessons as lesson_svc, promotion, settings_store
 from app.services.chat_service import remove_solution_vector
 from app.services.websearch import get_websearch
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def _page(page: int, size: int) -> tuple[int, int]:
@@ -30,7 +29,7 @@ def _like(q: str) -> str:
 
 
 # ------------------------------------------------------------------ conversations
-@router.get("/conversations")
+@router.get("/conversations", dependencies=[Depends(require_permission("conversations.view_all"))])
 async def list_conversations(
     page: int = 1,
     page_size: int = 20,
@@ -73,7 +72,7 @@ async def list_conversations(
     }
 
 
-@router.get("/conversations/{conversation_id}")
+@router.get("/conversations/{conversation_id}", dependencies=[Depends(require_permission("conversations.view_all"))])
 async def inspect_conversation(conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     convo = await session.get(Conversation, conversation_id)
     if convo is None:
@@ -119,7 +118,7 @@ class StatusIn(BaseModel):
     status: str = Field(pattern="^(resolved|unresolved|pending_review)$")
 
 
-@router.patch("/conversations/{conversation_id}/status", response_model=ConversationOut)
+@router.patch("/conversations/{conversation_id}/status", response_model=ConversationOut, dependencies=[Depends(require_permission("conversations.manage"))])
 async def set_status(conversation_id: uuid.UUID, body: StatusIn, session: AsyncSession = Depends(get_session)) -> ConversationOut:
     convo = await session.get(Conversation, conversation_id)
     if convo is None:
@@ -129,7 +128,7 @@ async def set_status(conversation_id: uuid.UUID, body: StatusIn, session: AsyncS
     return ConversationOut.of(convo)
 
 
-@router.post("/conversations/{conversation_id}/promote/draft")
+@router.post("/conversations/{conversation_id}/promote/draft", dependencies=[Depends(require_permission("conversations.manage"))])
 async def promote_draft(conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     convo = await session.get(Conversation, conversation_id)
     if convo is None:
@@ -140,7 +139,7 @@ async def promote_draft(conversation_id: uuid.UUID, session: AsyncSession = Depe
         raise HTTPException(422, str(exc)) from exc
 
 
-@router.post("/solutions/{solution_id}/reject", status_code=204)
+@router.post("/solutions/{solution_id}/reject", status_code=204, dependencies=[Depends(require_permission("conversations.manage"))])
 async def reject_solution(solution_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
     sol = await session.get(Solution, solution_id)
     if sol is None:
@@ -169,13 +168,13 @@ def _doc_out(d: Document) -> DocumentOut:
                        status=d.status, error=d.error, indexed_at=d.indexed_at, updated_at=d.updated_at)
 
 
-@router.get("/documents", response_model=list[DocumentOut])
+@router.get("/documents", response_model=list[DocumentOut], dependencies=[Depends(require_permission("documents.manage"))])
 async def list_documents(session: AsyncSession = Depends(get_session)) -> list[DocumentOut]:
     rows = (await session.execute(select(Document).order_by(Document.path))).scalars().all()
     return [_doc_out(d) for d in rows]
 
 
-@router.get("/documents/{doc_id}")
+@router.get("/documents/{doc_id}", dependencies=[Depends(require_permission("documents.manage"))])
 async def get_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     doc = await session.get(Document, doc_id)
     full = ingestion.docs_root() / doc.path if doc else None
@@ -193,8 +192,8 @@ class PublishIn(BaseModel):
     overwrite: bool = False
 
 
-@router.post("/documents", response_model=DocumentOut, status_code=201)
-async def publish_document(body: PublishIn, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)) -> DocumentOut:
+@router.post("/documents", response_model=DocumentOut, status_code=201, dependencies=[Depends(require_permission("documents.manage"))])
+async def publish_document(body: PublishIn, admin: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> DocumentOut:
     """Approve + publish: writes the Markdown file to the managed docs store and indexes it into Qdrant."""
     content = body.content
     if body.conversation_id:
@@ -225,7 +224,7 @@ class UpdateDocIn(BaseModel):
     content: str = Field(min_length=1, max_length=500_000)
 
 
-@router.put("/documents/{doc_id}", response_model=DocumentOut)
+@router.put("/documents/{doc_id}", response_model=DocumentOut, dependencies=[Depends(require_permission("documents.manage"))])
 async def update_document(doc_id: uuid.UUID, body: UpdateDocIn, session: AsyncSession = Depends(get_session)) -> DocumentOut:
     doc = await session.get(Document, doc_id)
     if doc is None:
@@ -239,7 +238,7 @@ async def update_document(doc_id: uuid.UUID, body: UpdateDocIn, session: AsyncSe
     return _doc_out(doc)
 
 
-@router.post("/documents/{doc_id}/reindex", response_model=DocumentOut)
+@router.post("/documents/{doc_id}/reindex", response_model=DocumentOut, dependencies=[Depends(require_permission("documents.manage"))])
 async def reindex_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> DocumentOut:
     """Re-chunk and re-embed a single document from the file on disk (forced, ignores the content hash)."""
     doc = await session.get(Document, doc_id)
@@ -254,7 +253,7 @@ async def reindex_document(doc_id: uuid.UUID, session: AsyncSession = Depends(ge
     return _doc_out(doc)
 
 
-@router.delete("/documents/{doc_id}", status_code=204)
+@router.delete("/documents/{doc_id}", status_code=204, dependencies=[Depends(require_permission("documents.manage"))])
 async def delete_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
     doc = await session.get(Document, doc_id)
     if doc is None:
@@ -262,7 +261,7 @@ async def delete_document(doc_id: uuid.UUID, session: AsyncSession = Depends(get
     await ingestion.remove_document(session, doc)
 
 
-@router.post("/documents/upload")
+@router.post("/documents/upload", dependencies=[Depends(require_permission("documents.manage"))])
 async def upload_documents(files: list[UploadFile] = File(...), session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
     results = []
     for f in files[:50]:
@@ -283,7 +282,7 @@ async def upload_documents(files: list[UploadFile] = File(...), session: AsyncSe
     return results
 
 
-@router.post("/documents/reindex")
+@router.post("/documents/reindex", dependencies=[Depends(require_permission("documents.manage"))])
 async def reindex(force: bool = False) -> dict[str, Any]:
     try:
         report = await ingestion.sync_directory(force=force)
@@ -293,7 +292,7 @@ async def reindex(force: bool = False) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ web cache
-@router.get("/cache")
+@router.get("/cache", dependencies=[Depends(require_permission("cache.manage"))])
 async def list_cache(
     page: int = 1, page_size: int = 20, q: str | None = None, include_invalidated: bool = False, session: AsyncSession = Depends(get_session)
 ) -> dict[str, Any]:
@@ -321,7 +320,7 @@ async def list_cache(
     }
 
 
-@router.get("/cache/{entry_id}")
+@router.get("/cache/{entry_id}", dependencies=[Depends(require_permission("cache.manage"))])
 async def get_cache_entry(entry_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     e = await session.get(WebCacheEntry, entry_id)
     if e is None:
@@ -331,53 +330,16 @@ async def get_cache_entry(entry_id: uuid.UUID, session: AsyncSession = Depends(g
             "created_at": e.created_at, "expires_at": e.expires_at, "invalidated_at": e.invalidated_at}
 
 
-@router.post("/cache/{entry_id}/invalidate", status_code=204)
-async def invalidate_cache_entry(entry_id: uuid.UUID, admin: User = Depends(require_admin)) -> None:
+@router.post("/cache/{entry_id}/invalidate", status_code=204, dependencies=[Depends(require_permission("cache.manage"))])
+async def invalidate_cache_entry(entry_id: uuid.UUID, admin: User = Depends(get_current_user)) -> None:
     if not await get_websearch().invalidate(entry_id, admin.id):
         raise HTTPException(404, "Cache entry not found")
 
 
 # ------------------------------------------------------------------ analytics
-@router.get("/analytics")
+@router.get("/analytics", dependencies=[Depends(require_permission("analytics.view"))])
 async def get_analytics(days: int = Query(default=30, ge=1, le=365), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     return await analytics.compute(session, days)
-
-
-# ------------------------------------------------------------------ users
-@router.get("/users", response_model=list[UserOut])
-async def list_users(session: AsyncSession = Depends(get_session)) -> list[User]:
-    return list((await session.execute(select(User).order_by(User.created_at))).scalars().all())
-
-
-@router.post("/users", response_model=UserOut, status_code=201)
-async def create_user(body: UserCreate, session: AsyncSession = Depends(get_session)) -> User:
-    user = User(email=body.email.strip().lower(), name=body.name.strip(), password_hash=hash_password(body.password), role=body.role)
-    session.add(user)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(409, "A user with this e-mail already exists") from None
-    return user
-
-
-@router.patch("/users/{user_id}", response_model=UserOut)
-async def update_user(
-    user_id: uuid.UUID, body: UserUpdate, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
-) -> User:
-    user = await session.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "User not found")
-    if user.id == admin.id and (body.is_active is False or (body.role and body.role != "admin")):
-        raise HTTPException(409, "You cannot disable or demote your own account")
-    if body.is_active is not None:
-        user.is_active = body.is_active
-    if body.role:
-        user.role = body.role
-    if body.password:
-        user.password_hash = hash_password(body.password)
-    await session.commit()
-    return user
 
 
 # ------------------------------------------------------------------ runtime settings
@@ -388,7 +350,7 @@ SETTING_LABELS = {
 }
 
 
-@router.get("/settings")
+@router.get("/settings", dependencies=[Depends(require_permission("settings.manage"))])
 async def get_runtime_settings() -> dict[str, Any]:
     values = await settings_store.get_all()
     return {"settings": [{"key": k, "label": SETTING_LABELS[k], "enabled": v} for k, v in values.items()]}
@@ -400,8 +362,8 @@ class SettingsIn(BaseModel):
     answer_cache_enabled: bool | None = None
 
 
-@router.put("/settings")
-async def update_runtime_settings(body: SettingsIn, admin: User = Depends(require_admin)) -> dict[str, Any]:
+@router.put("/settings", dependencies=[Depends(require_permission("settings.manage"))])
+async def update_runtime_settings(body: SettingsIn, admin: User = Depends(get_current_user)) -> dict[str, Any]:
     for key, value in body.model_dump(exclude_none=True).items():
         await settings_store.set_bool(key, value, admin.id)
     # cached answers may have been produced with a different source mix
@@ -412,7 +374,7 @@ async def update_runtime_settings(body: SettingsIn, admin: User = Depends(requir
 
 
 # ------------------------------------------------------------------ taught lessons (verification queue)
-@router.get("/lessons")
+@router.get("/lessons", dependencies=[Depends(require_permission("lessons.review"))])
 async def list_lessons(
     status: str = Query(default="pending", pattern="^(pending|approved|rejected|all)$"),
     page: int = 1,
@@ -445,7 +407,7 @@ def _apply_edit(lesson: Lesson, body: LessonEdit) -> None:
         lesson.instruction = body.instruction
 
 
-@router.patch("/lessons/{lesson_id}", response_model=LessonOut)
+@router.patch("/lessons/{lesson_id}", response_model=LessonOut, dependencies=[Depends(require_permission("lessons.review"))])
 async def edit_lesson(lesson_id: uuid.UUID, body: LessonEdit, session: AsyncSession = Depends(get_session)) -> LessonOut:
     lesson = await _lesson(session, lesson_id)
     _apply_edit(lesson, body)
@@ -455,9 +417,9 @@ async def edit_lesson(lesson_id: uuid.UUID, body: LessonEdit, session: AsyncSess
     return LessonOut.of(lesson, with_user=True)
 
 
-@router.post("/lessons/{lesson_id}/approve", response_model=LessonOut)
+@router.post("/lessons/{lesson_id}/approve", response_model=LessonOut, dependencies=[Depends(require_permission("lessons.review"))])
 async def approve_lesson(
-    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
 ) -> LessonOut:
     """Verify (optionally after editing): the lesson becomes searchable knowledge for everyone."""
     lesson = await _lesson(session, lesson_id)
@@ -474,9 +436,9 @@ async def approve_lesson(
     return LessonOut.of(lesson, with_user=True)
 
 
-@router.post("/lessons/{lesson_id}/reject", response_model=LessonOut)
+@router.post("/lessons/{lesson_id}/reject", response_model=LessonOut, dependencies=[Depends(require_permission("lessons.review"))])
 async def reject_lesson(
-    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(require_admin), session: AsyncSession = Depends(get_session)
+    lesson_id: uuid.UUID, body: LessonEdit, admin: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
 ) -> LessonOut:
     lesson = await _lesson(session, lesson_id)
     was_approved = lesson.status == "approved"

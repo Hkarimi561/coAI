@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
+import { can, useMe } from "@/lib/auth";
 import { SOURCE_COLOR, SOURCE_LABEL, STATUS_LABEL } from "@/lib/labels";
 import type { Analytics } from "@/lib/types";
 import { formatDate, formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
@@ -57,10 +58,11 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
 }
 
 export default function AdminDashboardPage() {
+  const { data: me } = useMe();
   return (
     <div className="space-y-8">
       <OverviewCards />
-      <AnalyticsSection />
+      {can(me, "analytics.view") ? <AnalyticsSection /> : null}
     </div>
   );
 }

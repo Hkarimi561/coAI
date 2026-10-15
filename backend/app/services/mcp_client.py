@@ -119,7 +119,7 @@ async def enabled_tools() -> list[ToolDef]:
     return defs
 
 
-async def execute(alias: str, args: dict[str, Any], user_id: str | None = None, role: str = "user") -> tuple[ToolDef | None, bool, str, int]:
+async def execute(alias: str, args: dict[str, Any], user_id: str | None = None) -> tuple[ToolDef | None, bool, str, int]:
     """Runs an allow-listed tool as the given user. Returns (tool, ok, text, duration_ms); never raises."""
     t0 = time.monotonic()
     tool = next((d for d in await enabled_tools() if d.alias == alias), None)
@@ -130,7 +130,7 @@ async def execute(alias: str, args: dict[str, Any], user_id: str | None = None, 
             server = await session.get(McpServer, tool.server_id)
         if server is None or not server.enabled:
             return tool, False, "MCP server is disabled.", 0
-        token = create_mcp_token(user_id, role) if (user_id and server.forward_user) else None
+        token = create_mcp_token(user_id) if (user_id and server.forward_user) else None
         ok, text = await _call(server, tool.tool, args if isinstance(args, dict) else {}, token)
     except Exception as exc:  # noqa: BLE001
         log.warning("MCP tool %s failed: %s", alias, exc)

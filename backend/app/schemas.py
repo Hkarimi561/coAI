@@ -11,13 +11,19 @@ class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RoleRef(ORM):
+    id: uuid.UUID
+    name: str
+
+
 class UserOut(ORM):
     id: uuid.UUID
     email: str
     name: str
-    role: str
     is_active: bool = True
     created_at: datetime | None = None
+    roles: list[RoleRef] = []
+    permissions: list[str] = []  # union over all roles; the UI shows/hides features from this
 
 
 class LoginIn(BaseModel):
@@ -29,12 +35,12 @@ class UserCreate(BaseModel):
     email: str = Field(min_length=3, max_length=255, pattern=r"^[^@\s]+@[^@\s]+$")
     name: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=8, max_length=256)
-    role: Literal["admin", "user"] = "user"
+    role_ids: list[uuid.UUID] | None = Field(default=None, max_length=50)  # omitted -> the default "user" role
 
 
 class UserUpdate(BaseModel):
     is_active: bool | None = None
-    role: Literal["admin", "user"] | None = None
+    role_ids: list[uuid.UUID] | None = Field(default=None, max_length=50)  # replaces the user's roles when given
     password: str | None = Field(default=None, min_length=8, max_length=256)
 
 

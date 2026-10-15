@@ -105,7 +105,7 @@ async def status(user: User = Depends(get_current_user)) -> dict[str, Any]:
         _safe(_llm()), _safe(_embeddings(), 5), _safe(_qdrant()), _safe(_postgres()), _safe(_redis()),
         _safe(_web()), _safe(_docker()), _safe(_ci()),
     )
-    admin = user.role == "admin"
+    admin = user.has_permission("system.view")
     comps = {n: {"ok": ok, "detail": redact(detail) if admin else ""} for n, (ok, detail) in zip(names, results, strict=True)}
     indexing = await ingestion.is_indexing()
     out: dict[str, Any] = {

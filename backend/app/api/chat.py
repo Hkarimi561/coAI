@@ -71,7 +71,7 @@ _turns: dict[uuid.UUID, TurnBuffer] = {}  # running turns by conversation id (si
 
 async def get_owned_conversation(session: AsyncSession, user: User, conversation_id: uuid.UUID) -> Conversation:
     convo = await session.get(Conversation, conversation_id)
-    if convo is None or (convo.user_id != user.id and user.role != "admin"):
+    if convo is None or (convo.user_id != user.id and not user.has_permission("conversations.view_all")):
         raise HTTPException(404, "Conversation not found")
     return convo
 
@@ -143,7 +143,7 @@ async def send_message(
     async def runner() -> None:
         try:
             await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit,
-                           user_id=user.id, is_admin=user.role == "admin")
+                           user_id=user.id, all_containers=user.has_permission("containers.logs_all"))
         finally:
             if await redis.get(lock_key) == token:
                 await redis.delete(lock_key)

@@ -15,11 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.models import McpServer, Skill
 from app.redaction import redact
-from app.security import require_admin
+from app.security import require_any_permission, require_permission
 from app.services import gaps as gaps_svc, mcp_client, skills as skills_svc
 from app.services.answer_cache import bump_kb_version
 
-router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+router = APIRouter(prefix="/admin", tags=["admin"])
 
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
@@ -77,13 +77,13 @@ async def _server(session: AsyncSession, server_id: uuid.UUID) -> McpServer:
     return s
 
 
-@router.get("/mcp")
+@router.get("/mcp", dependencies=[Depends(require_permission("mcp.manage"))])
 async def list_mcp(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
     rows = (await session.execute(select(McpServer).order_by(McpServer.name))).scalars().all()
     return [_mcp_out(s) for s in rows]
 
 
-@router.post("/mcp", status_code=201)
+@router.post("/mcp", status_code=201, dependencies=[Depends(require_permission("mcp.manage"))])
 async def create_mcp(body: McpIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     name = body.name.strip().lower()
     if not _SLUG.match(name):
@@ -100,7 +100,7 @@ async def create_mcp(body: McpIn, session: AsyncSession = Depends(get_session)) 
     return _mcp_out(s)
 
 
-@router.put("/mcp/{server_id}")
+@router.put("/mcp/{server_id}", dependencies=[Depends(require_permission("mcp.manage"))])
 async def update_mcp(server_id: uuid.UUID, body: McpUpdate, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     s = await _server(session, server_id)
     if body.transport is not None:
@@ -120,7 +120,7 @@ async def update_mcp(server_id: uuid.UUID, body: McpUpdate, session: AsyncSessio
     return _mcp_out(s)
 
 
-@router.post("/mcp/{server_id}/sync")
+@router.post("/mcp/{server_id}/sync", dependencies=[Depends(require_permission("mcp.manage"))])
 async def sync_mcp(server_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """Connects to the server and refreshes its tool list. New tools stay disabled until an admin allows them."""
     s = await _server(session, server_id)
@@ -142,7 +142,7 @@ async def sync_mcp(server_id: uuid.UUID, session: AsyncSession = Depends(get_ses
     return _mcp_out(s)
 
 
-@router.put("/mcp/{server_id}/tools")
+@router.put("/mcp/{server_id}/tools", dependencies=[Depends(require_permission("mcp.manage"))])
 async def set_mcp_tools(server_id: uuid.UUID, body: McpToolsIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     s = await _server(session, server_id)
     known = {t["name"] for t in s.tools or []}
@@ -152,7 +152,7 @@ async def set_mcp_tools(server_id: uuid.UUID, body: McpToolsIn, session: AsyncSe
     return _mcp_out(s)
 
 
-@router.delete("/mcp/{server_id}", status_code=204)
+@router.delete("/mcp/{server_id}", status_code=204, dependencies=[Depends(require_permission("mcp.manage"))])
 async def delete_mcp(server_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
     s = await _server(session, server_id)
     await session.delete(s)
@@ -181,13 +181,13 @@ async def _index(skill: Skill) -> None:
     await bump_kb_version()  # cached answers may predate this skill
 
 
-@router.get("/skills")
+@router.get("/skills", dependencies=[Depends(require_permission("skills.manage"))])
 async def list_skills(session: AsyncSession = Depends(get_session)) -> list[dict[str, Any]]:
     rows = (await session.execute(select(Skill).order_by(Skill.name))).scalars().all()
     return [_skill_out(s) for s in rows]
 
 
-@router.post("/skills", status_code=201)
+@router.post("/skills", status_code=201, dependencies=[Depends(require_permission("skills.manage"))])
 async def create_skill(body: SkillIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     s = Skill(name=body.name.strip(), description=body.description.strip(), instructions=body.instructions.strip(), enabled=body.enabled)
     session.add(s)
@@ -201,7 +201,7 @@ async def create_skill(body: SkillIn, session: AsyncSession = Depends(get_sessio
     return _skill_out(s)
 
 
-@router.put("/skills/{skill_id}")
+@router.put("/skills/{skill_id}", dependencies=[Depends(require_permission("skills.manage"))])
 async def update_skill(skill_id: uuid.UUID, body: SkillIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     s = await session.get(Skill, skill_id)
     if s is None:
@@ -217,7 +217,7 @@ async def update_skill(skill_id: uuid.UUID, body: SkillIn, session: AsyncSession
     return _skill_out(s)
 
 
-@router.delete("/skills/{skill_id}", status_code=204)
+@router.delete("/skills/{skill_id}", status_code=204, dependencies=[Depends(require_permission("skills.manage"))])
 async def delete_skill(skill_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> None:
     s = await session.get(Skill, skill_id)
     if s is None:
@@ -229,13 +229,13 @@ async def delete_skill(skill_id: uuid.UUID, session: AsyncSession = Depends(get_
 
 
 # ---------------------------------------------------------------- knowledge-gap report
-@router.get("/gaps")
+@router.get("/gaps", dependencies=[Depends(require_permission("gaps.view"))])
 async def knowledge_gaps(days: int = Query(default=7, ge=1, le=90), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """Questions the assistant could not answer well, clustered by topic."""
     return await gaps_svc.compute(session, days)
 
 
-@router.get("/gaps/export")
+@router.get("/gaps/export", dependencies=[Depends(require_permission("gaps.view"))])
 async def knowledge_gaps_export(days: int = Query(default=7, ge=1, le=90), session: AsyncSession = Depends(get_session)) -> Response:
     report = await gaps_svc.compute(session, days)
     name = f"knowledge-gaps-{datetime.now(UTC):%Y-%m-%d}.md"
@@ -243,7 +243,7 @@ async def knowledge_gaps_export(days: int = Query(default=7, ge=1, le=90), sessi
 
 
 # ---------------------------------------------------------------- dashboard overview (sidebar badges + home cards)
-@router.get("/overview")
+@router.get("/overview", dependencies=[Depends(require_any_permission)])
 async def admin_overview(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     """Counts for the admin dashboard and the sidebar badges."""
     from sqlalchemy import func

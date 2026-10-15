@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  Boxes,
   Database,
   FileText,
   GraduationCap,
@@ -12,6 +11,7 @@ import {
   Plug,
   SearchX,
   Settings,
+  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -24,7 +24,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAdminOverview } from "@/components/admin/overview";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/misc";
-import { useMe } from "@/lib/auth";
+import { can, isStaff, useMe } from "@/lib/auth";
 import type { AdminOverview } from "@/lib/types";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -38,6 +38,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   exact?: boolean;
+  perm?: string; // hidden unless the user holds this permission
   badge?: (o: AdminOverview) => NavBadge | null;
 }
 
@@ -46,7 +47,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
     title: "نمای کلی",
     items: [
       { href: "/admin", label: "داشبورد", icon: LayoutDashboard, exact: true },
-      { href: "/admin/status", label: "وضعیت سیستم", icon: Activity },
+      { href: "/admin/status", label: "وضعیت سیستم", icon: Activity, perm: "system.view" },
     ],
   },
   {
@@ -56,21 +57,23 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/admin/documents",
         label: "مستندات",
         icon: FileText,
+        perm: "documents.manage",
         badge: (o) => ({
           text: `${formatNumber(o.documents.chunks)} چانک`,
           tone: o.documents.errors ? "danger" : "info",
           title: `${formatNumber(o.documents.count)} سند · ${formatNumber(o.documents.chunks)} چانک${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} سند با خطا` : ""}`,
         }),
       },
-      { href: "/admin/skills", label: "مهارت‌ها", icon: Sparkles, badge: (o) => (o.skills.total ? { text: formatNumber(o.skills.enabled), tone: "neutral", title: "مهارت‌های فعال" } : null) },
+      { href: "/admin/skills", label: "مهارت‌ها", icon: Sparkles, perm: "skills.manage", badge: (o) => (o.skills.total ? { text: formatNumber(o.skills.enabled), tone: "neutral", title: "مهارت‌های فعال" } : null) },
       {
         href: "/admin/lessons",
         label: "آموزش‌ها",
         icon: GraduationCap,
+        perm: "lessons.review",
         badge: (o) => (o.lessons_pending ? { text: formatNumber(o.lessons_pending), tone: "warning", title: "در انتظار تأیید" } : null),
       },
-      { href: "/admin/gaps", label: "شکاف‌های دانش", icon: SearchX },
-      { href: "/admin/cache", label: "کش جستجوی وب", icon: Database, badge: (o) => (o.cache_entries ? { text: formatNumber(o.cache_entries), tone: "neutral" } : null) },
+      { href: "/admin/gaps", label: "شکاف‌های دانش", icon: SearchX, perm: "gaps.view" },
+      { href: "/admin/cache", label: "کش جستجوی وب", icon: Database, perm: "cache.manage", badge: (o) => (o.cache_entries ? { text: formatNumber(o.cache_entries), tone: "neutral" } : null) },
     ],
   },
   {
@@ -80,9 +83,9 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/admin/mcp",
         label: "سرورهای MCP",
         icon: Plug,
+        perm: "mcp.manage",
         badge: (o) => (o.mcp.servers ? { text: formatNumber(o.mcp.servers), tone: "neutral", title: `${formatNumber(o.mcp.servers)} سرور (${formatNumber(o.mcp.enabled)} فعال) · ${formatNumber(o.mcp.tools_enabled)} ابزار فعال` } : null),
       },
-      { href: "/admin/containers", label: "دسترسی داکر", icon: Boxes },
     ],
   },
   {
@@ -92,6 +95,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         href: "/admin/conversations",
         label: "گفتگوها",
         icon: MessagesSquare,
+        perm: "conversations.view_all",
         badge: (o) => (o.conversations.pending_review ? { text: formatNumber(o.conversations.pending_review), tone: "warning", title: "منتظر بازبینی" } : null),
       },
     ],
@@ -99,8 +103,9 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "مدیریت",
     items: [
-      { href: "/admin/users", label: "کاربران", icon: Users, badge: (o) => ({ text: formatNumber(o.users), tone: "neutral" }) },
-      { href: "/admin/settings", label: "تنظیمات", icon: Settings },
+      { href: "/admin/users", label: "کاربران", icon: Users, perm: "users.manage", badge: (o) => ({ text: formatNumber(o.users), tone: "neutral" }) },
+      { href: "/admin/roles", label: "نقش‌ها و دسترسی‌ها", icon: ShieldCheck, perm: "roles.manage" },
+      { href: "/admin/settings", label: "تنظیمات", icon: Settings, perm: "settings.manage" },
     ],
   },
 ];
@@ -113,11 +118,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false); // mobile menu
 
   useEffect(() => {
-    if (me && me.role !== "admin") router.replace("/chat");
+    if (me && !isStaff(me)) router.replace("/chat");
   }, [me, router]);
   useEffect(() => setOpen(false), [pathname]);
 
-  if (!me || me.role !== "admin") {
+  if (!me || !isStaff(me)) {
     return (
       <div className="flex h-full items-center justify-center">
         <Spinner className="h-6 w-6" />
@@ -125,7 +130,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  const current = GROUPS.flatMap((g) => g.items).find((i) => (i.exact ? pathname === i.href : pathname.startsWith(i.href)));
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.perm || can(me, i.perm)) })).filter((g) => g.items.length > 0);
+  const current = groups.flatMap((g) => g.items).find((i) => (i.exact ? pathname === i.href : pathname.startsWith(i.href)));
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -142,7 +148,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         className={cn("shrink-0 overflow-y-auto border-border bg-card md:block md:w-64 md:border-e", open ? "block max-h-[60vh] border-b" : "hidden")}
       >
         <nav className="space-y-5 p-3">
-          {GROUPS.map((g) => (
+          {groups.map((g) => (
             <div key={g.title}>
               <div className="mb-1 px-3 text-[11px] font-semibold tracking-wide text-muted-foreground">{g.title}</div>
               <ul className="space-y-0.5">

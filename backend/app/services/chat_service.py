@@ -55,7 +55,7 @@ def _history_for_llm(rows: list[Message]) -> list[dict[str, str]]:
     return [{"role": m.role, "content": truncate_middle(m.content, 1800)} for m in rows if m.meta.get("kind") != "request_error"]
 
 
-async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False, user_id: uuid.UUID | None = None, is_admin: bool = False) -> None:
+async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False, user_id: uuid.UUID | None = None, all_containers: bool = False) -> None:
     """Runs one user turn end-to-end. Never raises; failures are emitted as `error` events."""
     try:
         redacted = redact(content).strip()
@@ -105,7 +105,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
                 return
             effective = cmd.text or f"ابزار {cmd.tool} را اجرا کن و نتیجه را نشان بده."
         st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh,
-                       user_id=str(user_id) if user_id else None, is_admin=is_admin,
+                       user_id=str(user_id) if user_id else None, all_containers=all_containers,
                        mcp_command=(cmd.server, cmd.tool) if cmd else None)
         await _workflow.run(st, emit)
 

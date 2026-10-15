@@ -126,7 +126,7 @@ class TurnState:
     llm_error: str | None = None
     force_web: bool = False
     user_id: str | None = None
-    is_admin: bool = False
+    all_containers: bool = False  # holds containers.logs_all: not limited to per-user grants
     refresh: bool = False  # user explicitly asked to search again: bypass the answer cache and the web cache
     cacheable: bool = False
     cache_key: str | None = None
@@ -202,7 +202,7 @@ class TroubleshootingWorkflow:
             t0 = time.monotonic()
             try:
                 scope: list[str] | None = None
-                if not st.is_admin:  # per-user permissions: only containers this user was granted (logs or actions)
+                if not st.all_containers:  # per-user permissions: only containers this user was granted (logs or actions)
                     async with SessionLocal() as s:
                         scope = list((await container_access.access_map_for_user_id(
                             s, uuid.UUID(st.user_id or "0" * 32), await docker.allowed_names())).keys())
@@ -578,7 +578,7 @@ class TroubleshootingWorkflow:
             except json.JSONDecodeError:
                 args = {}
             t0 = time.monotonic()
-            tool, ok, result, ms = await mcp_client.execute(c["name"], args, user_id=st.user_id, role="admin" if st.is_admin else "user")
+            tool, ok, result, ms = await mcp_client.execute(c["name"], args, user_id=st.user_id)
             safe_args = redact_obj(args) if isinstance(args, dict) else {}
             st.mcp_calls.append({
                 "server": tool.server_name if tool else None, "tool": tool.tool if tool else c["name"], "ok": ok, "ms": ms,

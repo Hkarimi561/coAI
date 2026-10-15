@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Table, Text, Uuid, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,51 @@ def _now() -> Mapped[datetime]:
     return mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class RolePermission(Base):
+    """One permission key (see app.permissions.CATALOG) granted to a role."""
+
+    __tablename__ = "role_permissions"
+
+    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    permission: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+
+class RoleContainerGrant(Base):
+    """Container access a role gives to everyone who has it (exact name or glob). level: logs | actions."""
+
+    __tablename__ = "role_container_grants"
+
+    id: Mapped[uuid.UUID] = _pk()
+    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), index=True)
+    container: Mapped[str] = mapped_column(String(64))
+    level: Mapped[str] = mapped_column(String(16), default="logs")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = _pk()
+    name: Mapped[str] = mapped_column(String(48), unique=True)
+    description: Mapped[str] = mapped_column(String(200), default="")
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)  # built-in (admin, user): cannot be deleted or renamed
+    created_at: Mapped[datetime] = _now()
+
+    grants: Mapped[list[RolePermission]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+    container_grants: Mapped[list[RoleContainerGrant]] = relationship(cascade="all, delete-orphan", lazy="selectin", order_by="RoleContainerGrant.container")
+
+    @property
+    def permissions(self) -> list[str]:
+        return sorted(g.permission for g in self.grants)
+
+
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -28,9 +73,18 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(16), default="user")  # admin | user
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = _now()
+
+    roles: Mapped[list[Role]] = relationship(secondary=user_roles, lazy="selectin", order_by=Role.name)
+
+    @property
+    def permissions(self) -> list[str]:
+        """Union of the permissions of all the user's roles."""
+        return sorted({g.permission for r in self.roles for g in r.grants})
+
+    def has_permission(self, key: str) -> bool:
+        return any(g.permission == key for r in self.roles for g in r.grants)
 
 
 class Conversation(Base):
