@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import "@fontsource-variable/vazirmatn";
 import "./globals.css";
 import { Providers } from "./providers";
 

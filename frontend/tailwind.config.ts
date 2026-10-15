@@ -20,7 +20,7 @@ const config: Config = {
         warning: c("warning"),
       },
       fontFamily: {
-        sans: ["Vazirmatn", "Vazir", "Segoe UI", "Tahoma", "system-ui", "sans-serif"],
+        sans: ["Vazirmatn Variable", "Vazirmatn", "Vazir", "Segoe UI", "Tahoma", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Cascadia Code", "Consolas", "Menlo", "monospace"],
       },
       borderRadius: { lg: "0.75rem", md: "0.5rem" },
