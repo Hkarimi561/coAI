@@ -198,7 +198,7 @@ class TroubleshootingWorkflow:
     # ------------------------------------------------------------------ tools
     async def node_gather_tools(self, st: TurnState, emit: Emit) -> str:
         docker = get_docker()
-        if docker.enabled:
+        if docker.enabled and not st.mcp_command:
             t0 = time.monotonic()
             try:
                 scope: list[str] | None = None
@@ -578,7 +578,7 @@ class TroubleshootingWorkflow:
             except json.JSONDecodeError:
                 args = {}
             t0 = time.monotonic()
-            tool, ok, result, ms = await mcp_client.execute(c["name"], args)
+            tool, ok, result, ms = await mcp_client.execute(c["name"], args, user_id=st.user_id, role="admin" if st.is_admin else "user")
             safe_args = redact_obj(args) if isinstance(args, dict) else {}
             st.mcp_calls.append({
                 "server": tool.server_name if tool else None, "tool": tool.tool if tool else c["name"], "ok": ok, "ms": ms,
@@ -606,6 +606,14 @@ class TroubleshootingWorkflow:
         if st.mcp_command:  # only the commanded server / tool is offered
             srv, tl = st.mcp_command
             tool_defs = [d for d in tool_defs if d.server_name == srv and (tl is None or d.tool == tl)]
+        elif any(d.destructive for d in tool_defs):
+            # tools that change state (restart/stop/...) never run from free chat: the user must type an explicit /server[@tool] command
+            hidden = [f"/{d.server_name}@{d.tool}" for d in tool_defs if d.destructive]
+            tool_defs = [d for d in tool_defs if not d.destructive]
+            st.notes.append(
+                "Some tools that change state are not available in normal chat. If the user wants such an action, do not claim to do it: "
+                "do not give shell commands for it; tell them to type this in the chat box, for example " + ", ".join(hidden[:3]) + " <name> (or /<server> <request>)."
+            )
         st.tools_enabled = bool(tool_defs)
         messages = self._build_messages(st, marker_mode)
         st.est_prompt_chars += sum(len(m.get("content") or "") for m in messages)
@@ -616,7 +624,10 @@ class TroubleshootingWorkflow:
             while True:
                 pending: list[dict[str, str]] | None = None
                 round_text: list[str] = []
-                async for channel, piece in get_llm().stream(messages, [d.openai() for d in tool_defs] if tool_rounds < MAX_TOOL_ROUNDS else None):
+                async for channel, piece in get_llm().stream(
+                    messages, [d.openai() for d in tool_defs] if tool_rounds < MAX_TOOL_ROUNDS else None,
+                    "required" if (st.mcp_command and tool_rounds == 0 and tool_defs) else "auto",
+                ):
                     now = time.monotonic()
                     if channel == "tool_calls":
                         pending = json.loads(piece)
@@ -669,6 +680,10 @@ class TroubleshootingWorkflow:
         st.gen["response_ms"] += int((t_end - (first_ans or t_end)) * 1000)
         st.thinking = redact("".join(st.thoughts)).strip()[:30000]
         st.answer = self._strip_internal(st, redact("".join(chunks)).strip(), tool_defs)
+        if st.mcp_command and not st.mcp_calls and not st.llm_error:
+            # an explicit command must end in a real tool call; otherwise the model may have invented a result
+            warn = "⚠️ ابزار MCP اجرا نشد؛ هیچ عملیاتی انجام نشد و هیچ داده‌ای از ابزار دریافت نشد."
+            st.answer = warn if any(d.destructive for d in tool_defs) else f"{warn}\n\nمتن زیر فقط حدس مدل است و تأیید نشده:\n\n{st.answer}"
         self._finish(st, set(int(n) for n in re.findall(r"\[(\d{1,2})\]", st.answer)))
         if (
             st.cacheable and st.cache_key and st.answer and not st.llm_error and st.items and st.web_event != "failed" and not st.mcp_calls

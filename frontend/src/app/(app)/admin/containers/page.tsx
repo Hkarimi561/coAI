@@ -59,7 +59,7 @@ export default function ContainerPermissionsPage() {
         <h1 className="text-lg font-bold">دسترسی کاربران به کانتینرها</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           هر کاربر فقط کانتینرهایی را می‌بیند که اینجا به او داده‌اید: «فقط لاگ» (مشاهده‌ی وضعیت و لاگ) یا «لاگ و عملیات» (به‌علاوه‌ی شروع / توقف / ریستارت).
-          نام می‌تواند الگو باشد، مثلاً <code className="ltr">api-*</code>. ادمین‌ها به همه‌ی کانتینرهای مجاز دسترسی کامل دارند.
+          نام می‌تواند الگو باشد، مثلاً <code className="ltr">api-*</code>. ادمین‌ها به همه‌ی کانتینرهای مجاز دسترسی کامل دارند. این دسترسی‌ها توسط سرور MCP «docker» اعمال می‌شود: کاربران از طریق چت و دستورهایی مثل <code className="ltr">/docker وضعیت nginx</code> یا <code className="ltr">/docker@restart_container nginx</code> کار می‌کنند؛ عملیات تغییر وضعیت فقط با دستور صریح اجرا می‌شود و کانتینرهای اصلی همین پلتفرم محافظت‌شده‌اند.
         </p>
       </div>
 

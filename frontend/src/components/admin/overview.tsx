@@ -1,0 +1,83 @@
+"use client";
+
+import { useQuery } from "@tanstack/react-query";
+import { FileText, GraduationCap, MessagesSquare, Plug, Sparkles, Users } from "lucide-react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+import { Card } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/misc";
+import { api } from "@/lib/api";
+import type { AdminOverview } from "@/lib/types";
+import { cn, formatNumber } from "@/lib/utils";
+
+/** Counts for the sidebar badges and the dashboard cards (shared cache, refreshed every 15 s). */
+export function useAdminOverview() {
+  return useQuery({
+    queryKey: ["admin-overview"],
+    queryFn: () => api.get<AdminOverview>("/admin/overview"),
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+}
+
+function StatCard({ href, icon, label, value, hint, tone }: { href: string; icon: ReactNode; label: string; value: string; hint?: string; tone?: "warning" | "danger" }) {
+  return (
+    <Link href={href} className="group block focus-visible:outline-none">
+      <Card className={cn("h-full p-4 transition-colors group-hover:border-primary/50 group-focus-visible:ring-2 group-focus-visible:ring-primary/40", tone === "warning" && "border-warning/50", tone === "danger" && "border-danger/50")}>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="text-primary">{icon}</span>
+          {label}
+        </div>
+        <div className="mt-1.5 text-3xl font-bold tabular-nums">{value}</div>
+        {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+      </Card>
+    </Link>
+  );
+}
+
+/** Top of the dashboard: the state of every area at a glance; each card opens its page. */
+export function OverviewCards() {
+  const { data: o, isLoading } = useAdminOverview();
+  if (isLoading || !o) return <Spinner className="mx-auto h-5 w-5" />;
+  const icon = "h-4 w-4";
+  return (
+    <section aria-label="نمای کلی" className="space-y-3">
+      <h1 className="text-lg font-bold">داشبورد مدیریت</h1>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          href="/admin/documents"
+          icon={<FileText className={icon} />}
+          label="چانک‌های مستندات"
+          value={formatNumber(o.documents.chunks)}
+          hint={`${formatNumber(o.documents.count)} سند${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} با خطا` : ""}`}
+          tone={o.documents.errors ? "danger" : undefined}
+        />
+        <StatCard href="/admin/skills" icon={<Sparkles className={icon} />} label="مهارت‌های فعال" value={formatNumber(o.skills.enabled)} hint={`از ${formatNumber(o.skills.total)} مهارت`} />
+        <StatCard
+          href="/admin/mcp"
+          icon={<Plug className={icon} />}
+          label="ابزارهای MCP فعال"
+          value={formatNumber(o.mcp.tools_enabled)}
+          hint={`${formatNumber(o.mcp.enabled)} سرور فعال از ${formatNumber(o.mcp.servers)}`}
+        />
+        <StatCard
+          href="/admin/lessons"
+          icon={<GraduationCap className={icon} />}
+          label="آموزش‌های در انتظار تأیید"
+          value={formatNumber(o.lessons_pending)}
+          tone={o.lessons_pending ? "warning" : undefined}
+        />
+        <StatCard
+          href="/admin/conversations"
+          icon={<MessagesSquare className={icon} />}
+          label="گفتگوهای منتظر بازبینی"
+          value={formatNumber(o.conversations.pending_review)}
+          hint={`${formatNumber(o.conversations.total)} گفتگو در کل`}
+          tone={o.conversations.pending_review ? "warning" : undefined}
+        />
+        <StatCard href="/admin/users" icon={<Users className={icon} />} label="کاربران" value={formatNumber(o.users)} />
+      </div>
+    </section>
+  );
+}

@@ -83,6 +83,14 @@ async def index_content(session: AsyncSession, rel_path: str, raw: str, source: 
     """Chunk, embed and upsert one document; update its Document row. Raises on embedding/vector errors."""
     content_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     doc = (await session.execute(select(Document).where(Document.path == rel_path))).scalar_one_or_none()
+    if doc and doc.content_hash == content_hash and doc.status == "indexed" and doc.chunk_count and not force:
+        # fast path (the normal case after a restart): nothing changed and Qdrant still holds the stored number of chunks
+        try:
+            if await get_vectorstore().count_where(kind="doc", path=rel_path) == doc.chunk_count:
+                return doc
+        except Exception:  # noqa: BLE001 - fall through to the careful check below
+            pass
+
     parsed = parse_document(raw, fallback_title=Path(rel_path).stem)
     chunks = chunk_markdown(parsed.body, parsed.title, get_settings().chunk_max_chars)
     if doc and doc.content_hash == content_hash and not force and chunks:

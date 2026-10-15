@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plug, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, Plug, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -27,17 +27,26 @@ function parseHeaders(text: string): Record<string, string> {
 export default function McpPage() {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set()); // every server starts collapsed
+  const toggleOpen = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const [toDelete, setToDelete] = useState<McpServerRow | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", transport: "http", url: "", headers: "" });
+  const [form, setForm] = useState({ name: "", description: "", transport: "http", url: "", headers: "", forward_user: false });
 
   const servers = useQuery({ queryKey: ["admin-mcp"], queryFn: () => api.get<McpServerRow[]>("/admin/mcp") });
   const refresh = () => qc.invalidateQueries({ queryKey: ["admin-mcp"] });
 
   const create = useMutation({
-    mutationFn: () => api.post<McpServerRow>("/admin/mcp", { name: form.name, description: form.description, transport: form.transport, url: form.url, headers: parseHeaders(form.headers) }),
+    mutationFn: () => api.post<McpServerRow>("/admin/mcp", { name: form.name, description: form.description, forward_user: form.forward_user, transport: form.transport, url: form.url, headers: parseHeaders(form.headers) }),
     onSuccess: async (s) => {
       setAdding(false);
-      setForm({ name: "", description: "", transport: "http", url: "", headers: "" });
+      setForm({ name: "", description: "", transport: "http", url: "", headers: "", forward_user: false });
+      setExpanded((prev) => new Set(prev).add(s.id));
       await refresh();
       sync.mutate(s.id); // discover the tools right away
     },
@@ -80,12 +89,31 @@ export default function McpPage() {
       {servers.isLoading ? <Spinner className="mx-auto" /> : null}
       {servers.data?.length === 0 ? <Empty>هنوز سروری اضافه نشده است.</Empty> : null}
 
-      {servers.data?.map((s) => (
+      {servers.data?.map((s) => {
+        const isOpen = expanded.has(s.id);
+        return (
         <Card key={s.id} className="space-y-3 p-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Plug className="h-4 w-4 text-primary" />
-            <span className="font-semibold">{s.name}</span>
+            <button
+              type="button"
+              onClick={() => toggleOpen(s.id)}
+              aria-expanded={isOpen}
+              aria-controls={`mcp-${s.id}`}
+              aria-label={isOpen ? `بستن ${s.name}` : `باز کردن ${s.name}`}
+              className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted"
+            >
+              {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronLeft className="h-4 w-4 text-muted-foreground" />}
+              <Plug className="h-4 w-4 text-primary" />
+              <span className="font-semibold">{s.name}</span>
+            </button>
             <Badge tone="neutral">{s.transport === "sse" ? "SSE" : "HTTP"}</Badge>
+            {s.forward_user ? <Badge tone="info" title="هویت کاربر پرسنده برای اعمال دسترسی‌ها به سرور ارسال می‌شود">دسترسی هر کاربر</Badge> : null}
+            {!isOpen && s.tools.length ? (
+              <Badge tone={s.enabled_tools.length ? "success" : "neutral"}>
+                {formatNumber(s.enabled_tools.length)} از {formatNumber(s.tools.length)} ابزار فعال
+              </Badge>
+            ) : null}
+            {!isOpen && s.last_error ? <Badge tone="danger">خطا</Badge> : null}
             <code className="ltr min-w-0 flex-1 truncate text-xs text-muted-foreground">{s.url}</code>
             <Button size="sm" variant="outline" disabled={sync.isPending && sync.variables === s.id} onClick={() => sync.mutate(s.id)}>
               {sync.isPending && sync.variables === s.id ? <Spinner /> : <RefreshCw className="h-4 w-4" />} اتصال و دریافت ابزارها
@@ -95,6 +123,8 @@ export default function McpPage() {
               <Trash2 className="h-4 w-4 text-danger" />
             </Button>
           </div>
+          {isOpen ? (
+          <div id={`mcp-${s.id}`} className="space-y-3">
           <Input
             key={`${s.id}-${s.description}`}
             dir="auto"
@@ -128,7 +158,10 @@ export default function McpPage() {
                       onChange={(v) => setTools.mutate({ id: s.id, tools: v ? [...s.enabled_tools, t.name] : s.enabled_tools.filter((x) => x !== t.name) })}
                     />
                     <div className="min-w-0">
-                      <code className="ltr text-sm font-medium">{t.name}</code>
+                      <span className="flex flex-wrap items-center gap-2">
+                        <code className="ltr text-sm font-medium">{t.name}</code>
+                        {t.destructive ? <Badge tone="warning" title="فقط با دستور صریح (مثلاً /docker@restart_container) اجرا می‌شود">تغییر وضعیت · فقط با دستور صریح</Badge> : null}
+                      </span>
                       {t.description ? (
                         <p className="line-clamp-2 text-xs text-muted-foreground" dir="auto" title={t.description}>
                           {t.description}
@@ -142,8 +175,11 @@ export default function McpPage() {
           ) : !s.last_error ? (
             <p className="text-xs text-muted-foreground">ابزاری دریافت نشده؛ «اتصال و دریافت ابزارها» را بزنید.</p>
           ) : null}
+          </div>
+          ) : null}
         </Card>
-      ))}
+        );
+      })}
 
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogContent title="سرور MCP جدید" description="فقط سرورهای راه‌دور (Streamable HTTP یا SSE) پشتیبانی می‌شوند. بک‌اند باید به آدرس دسترسی شبکه داشته باشد.">
@@ -161,6 +197,10 @@ export default function McpPage() {
             <label className="block space-y-1 text-sm">
               <span>توضیح کوتاه (hint در فهرست دستورها)</span>
               <Input dir="auto" maxLength={200} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="بررسی DNS، پورت، HTTP و گواهی SSL" />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch checked={form.forward_user} label="ارسال هویت کاربر" onChange={(v) => setForm({ ...form, forward_user: v })} />
+              ارسال هویت کاربر به سرور (برای سرورهایی که دسترسی هر کاربر را خودشان اعمال می‌کنند)
             </label>
             <label className="block space-y-1 text-sm">
               <span>نوع اتصال</span>

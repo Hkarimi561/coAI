@@ -38,7 +38,7 @@ function suggest(token: string | null, commands: McpCommand[]): Suggestion[] {
   const toolSug = (c: McpCommand, tool: McpCommand["tools"][number]): Suggestion => ({
     insert: `/${c.server}@${tool.name} `,
     label: `/${c.server}@${tool.name}`,
-    hint: tool.description,
+    hint: tool.destructive ? `⚠ تغییر وضعیت — ${tool.description}` : tool.description,
     kind: "tool",
   });
   if (t.includes("@")) {

@@ -18,6 +18,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { OverviewCards } from "@/components/admin/overview";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
@@ -55,7 +56,16 @@ function ChartCard({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
-export default function AnalyticsPage() {
+export default function AdminDashboardPage() {
+  return (
+    <div className="space-y-8">
+      <OverviewCards />
+      <AnalyticsSection />
+    </div>
+  );
+}
+
+function AnalyticsSection() {
   const [days, setDays] = useState(30);
   const { data, isLoading, error } = useQuery({ queryKey: ["analytics", days], queryFn: () => api.get<Analytics>(`/admin/analytics?days=${days}`) });
 
@@ -73,7 +83,7 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold">آمار و تحلیل</h1>
+        <h2 className="text-base font-bold">آمار و تحلیل</h2>
         <Select value={days} onChange={(e) => setDays(Number(e.target.value))} className="w-40" aria-label="بازه‌ی زمانی">
           <option value={7}>۷ روز گذشته</option>
           <option value={30}>۳۰ روز گذشته</option>

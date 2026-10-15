@@ -37,6 +37,7 @@ class McpIn(BaseModel):
     url: str = Field(min_length=8, max_length=500)
     headers: dict[str, str] = Field(default_factory=dict)
     description: str = Field(default="", max_length=200)
+    forward_user: bool = False
     enabled: bool = True
 
 
@@ -45,6 +46,7 @@ class McpUpdate(BaseModel):
     url: str | None = Field(default=None, min_length=8, max_length=500)
     headers: dict[str, str] | None = None  # replaces all headers when given
     description: str | None = Field(default=None, max_length=200)
+    forward_user: bool | None = None
     enabled: bool | None = None
 
 
@@ -55,7 +57,8 @@ class McpToolsIn(BaseModel):
 def _mcp_out(s: McpServer) -> dict[str, Any]:
     return {
         "id": str(s.id), "name": s.name, "description": s.description or "", "transport": s.transport, "url": s.url, "header_names": sorted((s.headers or {}).keys()),
-        "enabled": s.enabled, "tools": [{"name": t["name"], "description": t.get("description", "")} for t in s.tools or []],
+        "enabled": s.enabled, "forward_user": s.forward_user,
+        "tools": [{"name": t["name"], "description": t.get("description", ""), "destructive": bool(t.get("destructive"))} for t in s.tools or []],
         "enabled_tools": s.enabled_tools or [], "last_error": s.last_error, "synced_at": s.synced_at.isoformat() if s.synced_at else None,
     }
 
@@ -85,7 +88,7 @@ async def create_mcp(body: McpIn, session: AsyncSession = Depends(get_session)) 
     name = body.name.strip().lower()
     if not _SLUG.match(name):
         raise HTTPException(422, "Name must be lowercase letters, digits, '-' or '_' (max 48)")
-    s = McpServer(name=name, transport=body.transport, url=_check_url(body.url), headers=body.headers, description=body.description.strip(), enabled=body.enabled,
+    s = McpServer(name=name, transport=body.transport, url=_check_url(body.url), headers=body.headers, description=body.description.strip(), forward_user=body.forward_user, enabled=body.enabled,
                   tools=[], enabled_tools=[])
     session.add(s)
     try:
@@ -108,6 +111,8 @@ async def update_mcp(server_id: uuid.UUID, body: McpUpdate, session: AsyncSessio
         s.headers = body.headers
     if body.description is not None:
         s.description = body.description.strip()
+    if body.forward_user is not None:
+        s.forward_user = body.forward_user
     if body.enabled is not None:
         s.enabled = body.enabled
     await session.commit()
@@ -235,3 +240,35 @@ async def knowledge_gaps_export(days: int = Query(default=7, ge=1, le=90), sessi
     report = await gaps_svc.compute(session, days)
     name = f"knowledge-gaps-{datetime.now(UTC):%Y-%m-%d}.md"
     return Response(gaps_svc.to_markdown(report), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# ---------------------------------------------------------------- dashboard overview (sidebar badges + home cards)
+@router.get("/overview")
+async def admin_overview(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Counts for the admin dashboard and the sidebar badges."""
+    from sqlalchemy import func
+
+    from app.models import Conversation, Document, Lesson, User, WebCacheEntry
+
+    async def one(stmt: Any) -> int:
+        return int((await session.execute(stmt)).scalar() or 0)
+
+    docs = int(await one(select(func.count()).select_from(Document)))
+    chunks = await one(select(func.coalesce(func.sum(Document.chunk_count), 0)))
+    doc_errors = await one(select(func.count()).select_from(Document).where(Document.status != "indexed"))
+    servers = (await session.execute(select(McpServer))).scalars().all()
+    return {
+        "documents": {"count": docs, "chunks": chunks, "errors": doc_errors},
+        "skills": {"total": await one(select(func.count()).select_from(Skill)), "enabled": await one(select(func.count()).select_from(Skill).where(Skill.enabled.is_(True)))},
+        "mcp": {
+            "servers": len(servers), "enabled": sum(1 for s in servers if s.enabled),
+            "tools_enabled": sum(len(s.enabled_tools or []) for s in servers if s.enabled), "tools_total": sum(len(s.tools or []) for s in servers),
+        },
+        "lessons_pending": await one(select(func.count()).select_from(Lesson).where(Lesson.status == "pending")),
+        "conversations": {
+            "total": await one(select(func.count()).select_from(Conversation)),
+            "pending_review": await one(select(func.count()).select_from(Conversation).where(Conversation.status == "pending_review")),
+        },
+        "users": await one(select(func.count()).select_from(User)),
+        "cache_entries": await one(select(func.count()).select_from(WebCacheEntry)),
+    }

@@ -27,7 +27,7 @@ async def available() -> list[dict]:
     out: dict[str, dict] = {}
     for d in await mcp_client.enabled_tools():
         s = out.setdefault(d.server_name, {"server": d.server_name, "tools": []})
-        s["tools"].append({"name": d.tool, "description": d.description[:300]})
+        s["tools"].append({"name": d.tool, "description": d.description[:300], "destructive": d.destructive})
     return sorted(out.values(), key=lambda s: s["server"])
 
 
@@ -41,6 +41,6 @@ async def resolve(cmd: McpCommand) -> str | None:
     if cmd.tool and not any(t["name"] == cmd.tool for t in server["tools"]):
         tools = "، ".join(f"`{t['name']}`" for t in server["tools"])
         return f"ابزار «{cmd.tool}» در سرور «{cmd.server}» فعال نیست.\n\nابزارهای فعال: {tools}"
-    if not cmd.text:
+    if not cmd.text and not cmd.tool:  # a named tool (e.g. /docker@list_containers) may run without any extra text
         return f"بعد از دستور، درخواست خود را بنویسید. مثال: `/{cmd.server}{'@' + cmd.tool if cmd.tool else ''} درخواست شما`"
     return None

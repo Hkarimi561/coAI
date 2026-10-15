@@ -227,6 +227,7 @@ class McpServer(Base):
     url: Mapped[str] = mapped_column(String(500))
     headers: Mapped[dict[str, str]] = mapped_column(JSONB, default=dict)  # e.g. Authorization; never returned by the API
     description: Mapped[str] = mapped_column(String(200), default="")  # short hint shown in the chat command autocomplete
+    forward_user: Mapped[bool] = mapped_column(Boolean, default=False)  # send the acting user's signed identity (X-Coai-User) with every call
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)  # last discovered: name, description, input_schema
     enabled_tools: Mapped[list[str]] = mapped_column(JSONB, default=list)  # admin allow-list (tool names)

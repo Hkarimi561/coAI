@@ -5,8 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import func, select, text
 
-from app.api import admin, admin_ext, auth, chat, container_admin, containers, system
-from app.services import skills
+from app.api import admin, admin_ext, auth, chat, container_admin, system
+from app.services import builtin_mcp, skills
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.models import User
@@ -56,7 +56,9 @@ async def lifespan(_: FastAPI):
     await get_redis().delete("lock:ingest")  # the previous process (if any) is gone; its lock would block indexing for minutes
     ingestion.startup_pending = settings.auto_index_on_start
     task = asyncio.create_task(background_index()) if settings.auto_index_on_start else None
+    mcp_task = asyncio.create_task(builtin_mcp.ensure_docker_server())  # registers the built-in Docker MCP server once
     yield
+    mcp_task.cancel()
     if task:
         task.cancel()
     await engine.dispose()
@@ -68,7 +70,6 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(admin_ext.router, prefix="/api")
 app.include_router(system.router, prefix="/api")
-app.include_router(containers.router, prefix="/api")
 app.include_router(container_admin.router, prefix="/api")
 
 

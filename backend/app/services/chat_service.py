@@ -103,7 +103,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
                     await session.commit()
                     await emit("done", MessageOut.of(msg).model_dump(mode="json"))
                 return
-            effective = cmd.text
+            effective = cmd.text or f"ابزار {cmd.tool} را اجرا کن و نتیجه را نشان بده."
         st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh,
                        user_id=str(user_id) if user_id else None, is_admin=is_admin,
                        mcp_command=(cmd.server, cmd.tool) if cmd else None)

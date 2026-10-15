@@ -18,6 +18,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import McpServer
+from app.security import create_mcp_token
 
 log = logging.getLogger(__name__)
 
@@ -27,8 +28,10 @@ MAX_RESULT_CHARS = 6000
 
 
 @asynccontextmanager
-async def _open(server: McpServer):
+async def _open(server: McpServer, user_token: str | None = None):
     headers = dict(server.headers or {})
+    if user_token and getattr(server, "forward_user", False):
+        headers["X-Coai-User"] = user_token  # per-user permissions are enforced by the MCP server itself
     cm = sse_client(server.url, headers=headers) if server.transport == "sse" else streamablehttp_client(server.url, headers=headers)
     async with cm as streams:
         async with ClientSession(streams[0], streams[1]) as session:
@@ -45,7 +48,11 @@ async def discover(server: McpServer) -> list[dict[str, Any]]:
             for _ in range(10):  # follow pagination
                 res = await session.list_tools(cursor=cursor) if cursor else await session.list_tools()
                 out.extend(
-                    {"name": t.name, "description": (t.description or "")[:1000], "input_schema": t.inputSchema or {"type": "object", "properties": {}}}
+                    {
+                        "name": t.name, "description": (t.description or "")[:1000], "input_schema": t.inputSchema or {"type": "object", "properties": {}},
+                        # tools that change state (destructiveHint) are only offered to the model on an explicit /command
+                        "destructive": bool(getattr(getattr(t, "annotations", None), "destructiveHint", None)),
+                    }
                     for t in res.tools
                 )
                 cursor = getattr(res, "nextCursor", None)
@@ -54,9 +61,9 @@ async def discover(server: McpServer) -> list[dict[str, Any]]:
     return out
 
 
-async def _call(server: McpServer, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
+async def _call(server: McpServer, tool: str, args: dict[str, Any], user_token: str | None = None) -> tuple[bool, str]:
     async with asyncio.timeout(CALL_TIMEOUT_S):
-        async with _open(server) as session:
+        async with _open(server, user_token) as session:
             result = await session.call_tool(tool, args)
     parts: list[str] = []
     for c in result.content:
@@ -73,6 +80,7 @@ class ToolDef:
     tool: str
     description: str
     schema: dict[str, Any]
+    destructive: bool = False  # changes state: offered to the model only when the user types an explicit command
 
     def openai(self) -> dict[str, Any]:
         return {
@@ -106,13 +114,13 @@ async def enabled_tools() -> list[ToolDef]:
         allowed = set(s.enabled_tools or [])
         for t in s.tools or []:
             if t["name"] in allowed:
-                defs.append(ToolDef(alias_of(s.name, t["name"]), str(s.id), s.name, t["name"], t.get("description", ""), t.get("input_schema") or {"type": "object", "properties": {}}))
+                defs.append(ToolDef(alias_of(s.name, t["name"]), str(s.id), s.name, t["name"], t.get("description", ""), t.get("input_schema") or {"type": "object", "properties": {}}, bool(t.get("destructive"))))
     _cache = (time.monotonic(), defs)
     return defs
 
 
-async def execute(alias: str, args: dict[str, Any]) -> tuple[ToolDef | None, bool, str, int]:
-    """Runs an allow-listed tool. Returns (tool, ok, text, duration_ms); never raises."""
+async def execute(alias: str, args: dict[str, Any], user_id: str | None = None, role: str = "user") -> tuple[ToolDef | None, bool, str, int]:
+    """Runs an allow-listed tool as the given user. Returns (tool, ok, text, duration_ms); never raises."""
     t0 = time.monotonic()
     tool = next((d for d in await enabled_tools() if d.alias == alias), None)
     if tool is None:
@@ -122,7 +130,8 @@ async def execute(alias: str, args: dict[str, Any]) -> tuple[ToolDef | None, boo
             server = await session.get(McpServer, tool.server_id)
         if server is None or not server.enabled:
             return tool, False, "MCP server is disabled.", 0
-        ok, text = await _call(server, tool.tool, args if isinstance(args, dict) else {})
+        token = create_mcp_token(user_id, role) if (user_id and server.forward_user) else None
+        ok, text = await _call(server, tool.tool, args if isinstance(args, dict) else {}, token)
     except Exception as exc:  # noqa: BLE001
         log.warning("MCP tool %s failed: %s", alias, exc)
         return tool, False, f"Tool call failed: {type(exc).__name__}: {str(exc)[:300]}", int((time.monotonic() - t0) * 1000)

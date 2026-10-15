@@ -126,6 +126,56 @@ class DockerInspector:
                 refused.append(cand)
         return found, refused[:3]
 
+    async def summary(self, name: str) -> dict:
+        """State of one container (no logs, never environment variables)."""
+        if not self.enabled or not self._allowed(name) or name not in await self.allowed_names():
+            raise DockerError("Container is not in the allow-list")
+        info = (await self._get(f"/containers/{name}/json")).json()
+        return self._summary(name, info)
+
+    async def stats(self, name: str) -> dict:
+        """One CPU / memory / network / pids snapshot of a running container."""
+        if not self.enabled or not self._allowed(name) or name not in await self.allowed_names():
+            raise DockerError("Container is not in the allow-list")
+        d = (await self._get(f"/containers/{name}/stats", {"stream": "false", "one-shot": "true"})).json()
+        cpu, pre = d.get("cpu_stats", {}), d.get("precpu_stats", {})
+        cpu_delta = cpu.get("cpu_usage", {}).get("total_usage", 0) - pre.get("cpu_usage", {}).get("total_usage", 0)
+        sys_delta = cpu.get("system_cpu_usage", 0) - pre.get("system_cpu_usage", 0)
+        ncpu = cpu.get("online_cpus") or len(cpu.get("cpu_usage", {}).get("percpu_usage") or []) or 1
+        mem = d.get("memory_stats", {})
+        cache = (mem.get("stats") or {}).get("inactive_file", (mem.get("stats") or {}).get("cache", 0))
+        used = max(0, mem.get("usage", 0) - cache)
+        limit = mem.get("limit", 0)
+        nets = d.get("networks") or {}
+        return {
+            "name": name,
+            "cpu_percent": round(cpu_delta / sys_delta * ncpu * 100, 2) if sys_delta > 0 and cpu_delta >= 0 else None,
+            "memory_used_mb": round(used / 1048576, 1),
+            "memory_limit_mb": round(limit / 1048576, 1) if limit else None,
+            "memory_percent": round(used / limit * 100, 2) if limit else None,
+            "net_rx_mb": round(sum(n.get("rx_bytes", 0) for n in nets.values()) / 1048576, 2),
+            "net_tx_mb": round(sum(n.get("tx_bytes", 0) for n in nets.values()) / 1048576, 2),
+            "pids": (d.get("pids_stats") or {}).get("current"),
+        }
+
+    def _summary(self, name: str, info: dict) -> dict:
+        state, cfg = info.get("State", {}), info.get("Config", {})
+        health = state.get("Health") or {}
+        return {
+            "name": name,
+            "image": cfg.get("Image"),
+            "status": state.get("Status"),
+            "running": state.get("Running"),
+            "exit_code": state.get("ExitCode"),
+            "oom_killed": state.get("OOMKilled"),
+            "restart_count": info.get("RestartCount"),
+            "started_at": state.get("StartedAt"),
+            "finished_at": state.get("FinishedAt"),
+            "error": redact(state.get("Error") or ""),
+            "health": health.get("Status"),
+            "health_log": [redact(str(h.get("Output", ""))[:300]) for h in (health.get("Log") or [])[-2:]],
+        }  # note: Config.Env is deliberately never read - it routinely contains secrets
+
     async def snapshot(self, name: str) -> ContainerSnapshot:
         if not self.enabled or not self._allowed(name) or name not in await self.allowed_names():
             raise DockerError("Container is not in the allow-list")

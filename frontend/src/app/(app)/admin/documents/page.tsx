@@ -6,7 +6,9 @@ import { useRef, useState } from "react";
 
 import { DocTree } from "@/components/admin/doc-tree";
 import { DocumentEditor, type EditorTarget } from "@/components/admin/document-editor";
+import { useAdminOverview } from "@/components/admin/overview";
 import { IndexProgress, SystemStatusBar, useSystemStatus } from "@/components/system-status";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
@@ -37,6 +39,7 @@ export default function DocumentsPage() {
   const [report, setReport] = useState<string | null>(null);
 
   const status = useSystemStatus();
+  const overview = useAdminOverview();
   const indexing = !!status.data?.indexing;
   const docs = useQuery({
     queryKey: ["admin-documents"],
@@ -89,7 +92,15 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="me-auto text-lg font-bold">مخزن مستندات تأییدشده</h1>
+        <h1 className="text-lg font-bold">مخزن مستندات تأییدشده</h1>
+        {overview.data ? (
+          <span className="me-auto flex items-center gap-1.5" title="مجموع چانک‌های مستندات در پایگاه دانش">
+            <Badge tone="info">{formatNumber(overview.data.documents.chunks)} چانک</Badge>
+            <Badge tone="neutral">{formatNumber(overview.data.documents.count)} سند</Badge>
+          </span>
+        ) : (
+          <span className="me-auto" />
+        )}
         <Button variant="outline" onClick={() => setEditor({ path: "runbooks/new-runbook.md", content: NEW_TEMPLATE })}>
           <FilePlus2 className="h-4 w-4" /> سند جدید
         </Button>

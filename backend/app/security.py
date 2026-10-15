@@ -31,6 +31,19 @@ def create_token(user: User) -> str:
     return jwt.encode(payload, s.jwt_secret, algorithm=ALGORITHM)
 
 
+def create_mcp_token(user_id: uuid.UUID | str, role: str) -> str:
+    """Short-lived signed identity the backend sends to MCP servers that enforce per-user permissions."""
+    now = datetime.now(UTC)
+    return jwt.encode({"sub": str(user_id), "role": role, "typ": "mcp", "iat": now, "exp": now + timedelta(seconds=120)}, get_settings().jwt_secret, algorithm=ALGORITHM)
+
+
+def decode_mcp_token(token: str) -> tuple[uuid.UUID, str]:
+    payload = jwt.decode(token, get_settings().jwt_secret, algorithms=[ALGORITHM])
+    if payload.get("typ") != "mcp":
+        raise jwt.InvalidTokenError("not an MCP token")
+    return uuid.UUID(payload["sub"]), str(payload.get("role", "user"))
+
+
 def set_auth_cookie(response: Response, token: str) -> None:
     s = get_settings()
     response.set_cookie(

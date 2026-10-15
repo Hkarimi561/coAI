@@ -295,7 +295,8 @@ export interface McpServerRow {
   description: string;
   header_names: string[];
   enabled: boolean;
-  tools: { name: string; description: string }[];
+  forward_user: boolean;
+  tools: { name: string; description: string; destructive?: boolean }[];
   enabled_tools: string[];
   last_error: string | null;
   synced_at: string | null;
@@ -333,5 +334,15 @@ export interface GapReport {
 export interface McpCommand {
   server: string;
   hint: string;
-  tools: { name: string; description: string }[];
+  tools: { name: string; description: string; destructive?: boolean }[];
+}
+
+export interface AdminOverview {
+  documents: { count: number; chunks: number; errors: number };
+  skills: { total: number; enabled: number };
+  mcp: { servers: number; enabled: number; tools_enabled: number; tools_total: number };
+  lessons_pending: number;
+  conversations: { total: number; pending_review: number };
+  users: number;
+  cache_entries: number;
 }

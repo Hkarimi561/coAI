@@ -59,7 +59,15 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
             {!streaming && meta.mcp_calls?.length ? (
               <div className="mt-2 space-y-1.5">
                 {meta.mcp_calls.map((c, i) => (
-                  <details key={i} className="rounded-md border border-border bg-muted/40 text-xs">
+                  <details
+                    key={i}
+                    className="rounded-md border border-border bg-muted/40 text-xs"
+                    // bring the opened evidence into view above the message box (it often opens right at the bottom of the chat)
+                    onToggle={(e) => {
+                      const el = e.currentTarget;
+                      if (el.open) requestAnimationFrame(() => el.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+                    }}
+                  >
                     <summary className="flex cursor-pointer select-none items-center gap-2 px-2.5 py-1.5">
                       <Badge tone={c.ok ? "success" : "danger"}>
                         <span dir="ltr">
@@ -73,14 +81,14 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
                       {c.args && Object.keys(c.args).length ? (
                         <div>
                           <div className="mb-0.5 text-muted-foreground">ورودی</div>
-                          <pre dir="ltr" className="max-h-24 overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2 text-left">
+                          <pre dir="ltr" className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2 text-left">
                             {JSON.stringify(c.args, null, 2)}
                           </pre>
                         </div>
                       ) : null}
                       <div>
                         <div className="mb-0.5 text-muted-foreground">خروجی</div>
-                        <pre dir="auto" className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2">
+                        <pre dir="auto" className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2">
                           {c.result || "—"}
                         </pre>
                       </div>

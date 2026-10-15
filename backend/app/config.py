@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     docker_host: str | None = "http://docker-proxy:2375"
     docker_allowed_containers: str = ""  # comma separated names / glob patterns; empty => feature disabled
     docker_log_tail: int = 120
+    # glob patterns of containers whose start/stop/restart is refused through chat (the platform's own core services)
+    docker_protected_containers: str = "devops-ai-backend-*,devops-ai-postgres-*,devops-ai-redis-*,devops-ai-qdrant-*,devops-ai-docker-proxy-*,devops-ai-docker-mcp-*"
+    docker_mcp_url: str = "http://docker-mcp:9101/mcp"  # the built-in Docker MCP server is registered with this URL ("" = do not register)
 
     # --- CI ---------------------------------------------------------------
     ci_provider: str = "none"  # "none" | "github"
@@ -106,6 +109,10 @@ class Settings(BaseSettings):
             return self.database_url_override
         user, pwd = quote(self.postgres_user, safe=""), quote(self.postgres_password, safe="")
         return f"postgresql+asyncpg://{user}:{pwd}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+
+    @property
+    def docker_protected_list(self) -> list[str]:
+        return [p.strip() for p in self.docker_protected_containers.split(",") if p.strip()]
 
     @property
     def docker_allowlist(self) -> list[str]:

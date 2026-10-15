@@ -96,7 +96,7 @@ class LLMClient:
         return value or configured
 
     # -- request building -------------------------------------------------
-    def _request(self, messages: list[dict[str, Any]], stream: bool, max_tokens: int | None, tools: list[dict] | None = None) -> tuple[str, dict]:
+    def _request(self, messages: list[dict[str, Any]], stream: bool, max_tokens: int | None, tools: list[dict] | None = None, tool_choice: str = "auto") -> tuple[str, dict]:
         s = self.s
         if s.llm_provider == "ollama":
             options: dict = {"temperature": s.llm_temperature, "num_ctx": s.llm_num_ctx}
@@ -107,7 +107,7 @@ class LLMClient:
         body = {"model": s.llm_model, "messages": messages, "stream": stream, "temperature": s.llm_temperature}
         if tools:  # OpenAI-style function calling (LM Studio, vLLM, ...)
             body["tools"] = tools
-            body["tool_choice"] = "auto"
+            body["tool_choice"] = tool_choice  # "required" forces a call (LM Studio rejects a named function choice)
         if s.llm_reasoning_effort:
             body["reasoning_effort"] = s.llm_reasoning_effort  # "none" turns reasoning off: far faster on slow local models
         if stream:
@@ -117,8 +117,8 @@ class LLMClient:
         return f"{self.base}/chat/completions", body
 
     # -- streaming --------------------------------------------------------
-    async def stream(self, messages: list[dict[str, Any]], tools: list[dict] | None = None) -> AsyncIterator[Chunk]:
-        url, body = self._request(messages, True, None, tools if self.s.llm_provider != "ollama" else None)
+    async def stream(self, messages: list[dict[str, Any]], tools: list[dict] | None = None, tool_choice: str = "auto") -> AsyncIterator[Chunk]:
+        url, body = self._request(messages, True, None, tools if self.s.llm_provider != "ollama" else None, tool_choice)
         splitter = ThinkSplitter()
         calls: dict[int, dict[str, str]] = {}  # streamed tool-call fragments by index
         try:

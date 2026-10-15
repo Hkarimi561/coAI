@@ -115,6 +115,19 @@ services:
       retries: 10
       start_period: 60s
 
+  # Built-in Docker MCP server: container status / logs / stats / start / stop / restart, limited per user by the grants admins manage
+  # under "دسترسی کانتینرها". Reuses the backend image; reachable only inside the compose network (no published port).
+  docker-mcp:
+    image: devops-ai-backend
+    pull_policy: never
+    restart: unless-stopped
+    <<: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      docker-proxy: { condition: service_started }
+    entrypoint: ["python", "-m", "app.mcp_servers.docker_mcp"]
+
   # Sample MCP server with read-only DevOps checks. Add http://sample-mcp:9100/mcp in Admin -> MCP servers.
   # Reuses the backend image (it already has the `mcp` package); remove this service if you do not need it.
   sample-mcp:
