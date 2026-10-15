@@ -83,16 +83,23 @@ async def index_content(session: AsyncSession, rel_path: str, raw: str, source: 
     """Chunk, embed and upsert one document; update its Document row. Raises on embedding/vector errors."""
     content_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     doc = (await session.execute(select(Document).where(Document.path == rel_path))).scalar_one_or_none()
-    if doc and doc.content_hash == content_hash and doc.status == "indexed" and not force:
-        # skip only when the vectors really exist (they are missing e.g. after switching QDRANT_COLLECTION / embedding model)
-        try:
-            if await get_vectorstore().count_where(kind="doc", path=rel_path) >= (doc.chunk_count or 0):
-                return doc
-        except Exception:  # noqa: BLE001 - if Qdrant cannot be asked, re-index to be safe
-            pass
-
     parsed = parse_document(raw, fallback_title=Path(rel_path).stem)
     chunks = chunk_markdown(parsed.body, parsed.title, get_settings().chunk_max_chars)
+    if doc and doc.content_hash == content_hash and not force and chunks:
+        # Unchanged content: skip the (expensive) embedding when Qdrant already holds exactly these chunks. The vectors are missing
+        # e.g. after switching QDRANT_COLLECTION / embedding model; rows flagged 'error' by an embedding outage are healed here.
+        try:
+            have = await get_vectorstore().count_where(kind="doc", path=rel_path)
+        except Exception:  # noqa: BLE001 - if Qdrant cannot be asked, re-index to be safe
+            have = -1
+        if have == len(chunks):
+            if doc.status != "indexed" or doc.error or doc.chunk_count != len(chunks):
+                doc.status, doc.error, doc.chunk_count = "indexed", None, len(chunks)
+                doc.title = parsed.title[:255]
+                doc.indexed_at = doc.indexed_at or datetime.now(UTC)
+                await session.commit()
+            return doc
+
     now = datetime.now(UTC)
     embedder, store = get_embedder(), get_vectorstore()
 
