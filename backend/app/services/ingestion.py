@@ -19,7 +19,7 @@ from app.db import SessionLocal
 from app.models import Document
 from app.redaction import redact
 from app.redis_client import get_redis
-from app.services.chunker import chunk_markdown, parse_document
+from app.services.chunker import chunk_markdown, clean_mdx, parse_document
 from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_vectorstore
 
@@ -59,8 +59,8 @@ def docs_root() -> Path:
 def safe_rel_path(rel: str) -> str:
     """Validate a user-supplied relative path and return it normalised (posix)."""
     rel = rel.replace("\\", "/").strip().lstrip("/")
-    if not rel or ".." in Path(rel).parts or not rel.lower().endswith(".md"):
-        raise DocsError("Path must be a relative .md path without '..'")
+    if not rel or ".." in Path(rel).parts or not rel.lower().endswith((".md", ".mdx")):
+        raise DocsError("Path must be a relative .md or .mdx path without '..'")
     if not re.fullmatch(r"[\w\-./ ]+", rel, flags=re.UNICODE):
         raise DocsError("Path contains unsupported characters")
     full = (docs_root() / rel).resolve()
@@ -180,7 +180,7 @@ async def sync_directory(force: bool = False) -> SyncReport:
     report = SyncReport()
     try:
         root = docs_root()
-        files = sorted(p for p in root.rglob("*.md") if p.is_file())
+        files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in (".md", ".mdx"))
         seen: set[str] = set()
         progress.update(running=True, total=len(files), done=0, current=None)
         async with SessionLocal() as session:
@@ -191,6 +191,8 @@ async def sync_directory(force: bool = False) -> SyncReport:
                 await redis.expire(_LOCK_KEY, 900)  # keep the lock alive during long runs
                 try:
                     raw = await asyncio.to_thread(path.read_text, encoding="utf-8")
+                    if path.suffix.lower() == ".mdx":
+                        raw = clean_mdx(raw)  # JSX/imports removed so the chunks are plain Markdown
                     existing = (await session.execute(select(Document).where(Document.path == rel))).scalar_one_or_none()
                     before = existing.content_hash if existing else None
                     source = "promoted" if rel.startswith("promoted/") else ("upload" if rel.startswith("uploads/") else "imported")

@@ -36,6 +36,118 @@ def parse_front_matter(raw: str) -> tuple[dict[str, str], str]:
     return {}, raw
 
 
+_MDX_EXPORT = re.compile(r"^export\s+const\s+(title|description)\s*=\s*([\"'`])(.*?)\2\s*;?\s*$")
+_MDX_STMT = re.compile(r"^(import|export)\s")
+_MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.S)
+_OPEN, _CLOSE = "{[(", "}])"
+
+
+def _tag_end(text: str, i: int) -> int:
+    """Index just after the JSX tag starting at text[i] ('<'), or -1 if it is not a complete tag.
+    Understands nested {}, [], () and quoted strings, so props like rows={[...]} spanning many lines are consumed whole."""
+    n, depth, quote, j = len(text), 0, "", i + 1
+    while j < n and j - i < 4000:
+        ch = text[j]
+        if quote:
+            if ch == "\\":
+                j += 2
+                continue
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'`":
+            quote = ch
+        elif ch in _OPEN:
+            depth += 1
+        elif ch in _CLOSE:
+            depth -= 1
+        elif ch == ">" and depth <= 0:
+            return j + 1
+        elif ch == "\n" and depth <= 0 and text.startswith("\n", j + 1):
+            return -1  # blank line outside any bracket: this was not a tag
+        j += 1
+    return -1
+
+
+def _strip_jsx(text: str) -> str:
+    """Removes MDX comments and PascalCase component tags (their text content stays); inline code and <div>-style HTML are kept."""
+    text = _MDX_COMMENT.sub("", text)
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "`":  # inline code on one line: copy untouched (docs often mention `<Image>` as text)
+            j, nl = text.find("`", i + 1), text.find("\n", i + 1)
+            if j != -1 and (nl == -1 or j < nl):
+                out.append(text[i : j + 1])
+                i = j + 1
+                continue
+        elif c == "<" and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] in "_.")) and i + 1 < n:
+            nxt = text[i + 1]
+            if nxt.isupper() or (nxt == "/" and i + 2 < n and text[i + 2].isupper()):
+                end = _tag_end(text, i)
+                if end > 0:
+                    i = end
+                    continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _bracket_delta(line: str) -> int:
+    return sum(line.count(c) for c in _OPEN) - sum(line.count(c) for c in _CLOSE)
+
+
+def clean_mdx(raw: str) -> str:
+    """Turns an MDX page into plain Markdown: drops import/export statements (also multi-line ones), JSX comments and component
+    tags (their text stays) and turns the page title/description (front matter or 'export const title') into a heading.
+    Fenced code blocks are left untouched."""
+    text = raw.replace("\r\n", "\n").replace("\r", "\n")
+    meta, body = parse_front_matter(text)
+    blocks: list[tuple[bool, list[str]]] = []  # (is_code, lines)
+    cur: list[str] = []
+    in_fence = False
+    for ln in body.split("\n"):
+        if _FENCE.match(ln):
+            if not in_fence:
+                blocks.append((False, cur))
+                cur, in_fence = [ln], True
+            else:
+                cur.append(ln)
+                blocks.append((True, cur))
+                cur, in_fence = [], False
+            continue
+        cur.append(ln)
+    if cur:
+        blocks.append((in_fence, cur))  # an unterminated fence stays code
+    title, description = meta.get("title", ""), meta.get("description", "")
+    parts: list[str] = []
+    for is_code, lines in blocks:
+        if is_code:
+            parts.append("\n".join(lines))
+            continue
+        kept: list[str] = []
+        depth = 0  # >0 while inside a multi-line import/export statement
+        for ln in lines:
+            if depth > 0:
+                depth += _bracket_delta(ln)
+                continue
+            m = _MDX_EXPORT.match(ln.strip())
+            if m:
+                if m.group(1) == "title":
+                    title = title or m.group(3)
+                else:
+                    description = description or m.group(3)
+                continue
+            if _MDX_STMT.match(ln):
+                depth = max(0, _bracket_delta(ln))
+                continue
+            kept.append(ln)
+        parts.append(_strip_jsx("\n".join(kept)))
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(parts)).strip()
+    head = (f"# {title}\n\n" + (f"{description}\n\n" if description else "")) if title else ""
+    return f"{head}{cleaned}\n"
+
+
 def parse_document(raw: str, fallback_title: str) -> ParsedDoc:
     raw = raw.replace("\r\n", "\n").replace("\r", "\n")
     meta, body = parse_front_matter(raw)
