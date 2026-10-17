@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 
 import { Spinner } from "@/components/ui/misc";
 import type { McpCommand } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 240; // px, then the textarea scrolls
@@ -68,6 +69,7 @@ function suggest(token: string | null, commands: McpCommand[]): Suggestion[] {
 /** Auto-growing message box. Enter sends, Shift+Enter inserts a new line; pasted logs keep their line breaks.
  *  Typing "/" opens an autocomplete of MCP servers; "/server@" lists that server's tools. */
 export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedReason, trailing, commands = [], attachments = [], onAddFiles, onRemoveAttachment }: Props) {
+  const t = useT();
   const locked = !!lockedReason;
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -164,7 +166,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
       }}
     >
       {attachments.length ? (
-        <ul className="flex flex-wrap gap-2" aria-label="تصاویر پیوست">
+        <ul className="flex flex-wrap gap-2" aria-label={t("تصاویر پیوست")}>
           {attachments.map((a, i) => (
             <li key={a.url} className="group relative">
               {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
@@ -173,7 +175,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
                 <button
                   type="button"
                   onClick={() => onRemoveAttachment(i)}
-                  aria-label={`حذف ${a.name}`}
+                  aria-label={`${t("حذف")} ${a.name}`}
                   className="absolute -end-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background shadow hover:bg-danger"
                 >
                   <X className="h-3 w-3" />
@@ -185,7 +187,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
       ) : null}
       <div className="flex items-end gap-2">
       {open ? (
-        <div role="listbox" aria-label="دستورهای MCP" className="absolute bottom-full start-0 end-0 z-30 mb-2 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
+        <div role="listbox" aria-label={t("دستورهای MCP")} className="absolute bottom-full start-0 end-0 z-30 mb-2 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
           <div className="max-h-64 overflow-y-auto py-1">
             {suggestions.map((s, i) => (
               <button
@@ -211,7 +213,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
             ))}
           </div>
           <div className="border-t border-border bg-muted/50 px-3 py-1 text-[11px] text-muted-foreground">
-            ↑↓ انتخاب · Enter / Tab تأیید · Esc بستن · برای انتخاب ابزار بعد از نام سرور @ بزنید
+            {t("↑↓ انتخاب · Enter / Tab تأیید · Esc بستن · برای انتخاب ابزار بعد از نام سرور @ بزنید")}
           </div>
         </div>
       ) : null}
@@ -233,8 +235,8 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={!canAttach}
-            aria-label="پیوست تصویر"
-            title="پیوست تصویر (می‌توانید تصویر را اینجا Paste یا Drop هم کنید)"
+            aria-label={t("پیوست تصویر")}
+            title={t("پیوست تصویر (می‌توانید تصویر را اینجا Paste یا Drop هم کنید)")}
             className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <ImagePlus className="h-5 w-5" />
@@ -262,7 +264,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
         rows={1}
         readOnly={busy || locked}
         spellCheck={false}
-        aria-label="پیام"
+        aria-label={t("پیام")}
         aria-autocomplete="list"
         placeholder={lockedReason ?? placeholder}
         className="max-h-60 min-h-[2.5rem] flex-1 resize-none bg-transparent py-2 text-[0.95rem] leading-6 placeholder:text-muted-foreground focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
@@ -272,8 +274,8 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
         type="button"
         onClick={onSubmit}
         disabled={!canSend}
-        aria-label="ارسال پیام"
-        title="ارسال (Enter)"
+        aria-label={t("ارسال پیام")}
+        title={t("ارسال (Enter)")}
         className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
       >
         {busy ? <Spinner /> : <ArrowUp className="h-4 w-4" />}

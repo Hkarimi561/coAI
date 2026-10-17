@@ -11,9 +11,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { User } from "@/lib/types";
 
 export default function LoginPage() {
+  const t = useT();
   const router = useRouter();
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
@@ -46,22 +48,22 @@ export default function LoginPage() {
               <Terminal className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold">دستیار هوشمند DevOps</h1>
-              <p className="text-xs text-muted-foreground">ورود به سامانه‌ی داخلی</p>
+              <h1 className="text-lg font-bold">{t("دستیار هوشمند DevOps")}</h1>
+              <p className="text-xs text-muted-foreground">{t("ورود به سامانه‌ی داخلی")}</p>
             </div>
           </div>
           <form onSubmit={submit} className="space-y-3">
             <label className="block space-y-1 text-sm">
-              <span>ایمیل</span>
+              <span>{t("ایمیل")}</span>
               <Input type="email" dir="ltr" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
             </label>
             <label className="block space-y-1 text-sm">
-              <span>رمز عبور</span>
+              <span>{t("رمز عبور")}</span>
               <Input type="password" dir="ltr" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
             </label>
             <ErrorBanner error={error} />
             <Button type="submit" className="w-full" disabled={busy}>
-              {busy ? <Spinner /> : null} ورود
+              {busy ? <Spinner /> : null} {t("ورود")}
             </Button>
           </form>
         </CardContent>

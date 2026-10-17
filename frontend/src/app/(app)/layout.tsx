@@ -12,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { useMe } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
+  const t = useT();
   const { data: me, error, isLoading } = useMe();
   const router = useRouter();
   const qc = useQueryClient();
@@ -52,9 +54,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             <span className="rounded-md bg-primary p-1.5 text-primary-foreground">
               <Terminal className="h-4 w-4" />
             </span>
-            دستیار DevOps
+            {t("دستیار DevOps")}
           </Link>
-          <nav className="flex gap-1" aria-label="ناوبری اصلی">
+          <nav className="flex gap-1" aria-label={t("ناوبری اصلی")}>
             {nav
               .filter((n) => n.show)
               .map(({ href, label, icon: Icon }) => (
@@ -66,7 +68,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                     pathname.startsWith(href) && "bg-muted font-medium",
                   )}
                 >
-                  <Icon className="h-4 w-4" /> {label}
+                  <Icon className="h-4 w-4" /> {t(label)}
                 </Link>
               ))}
           </nav>
@@ -78,7 +80,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {me.email}
           </span>
           <Button variant="ghost" size="sm" onClick={logout}>
-            <LogOut className="h-4 w-4" /> خروج
+            <LogOut className="h-4 w-4" /> {t("خروج")}
           </Button>
         </div>
       </header>

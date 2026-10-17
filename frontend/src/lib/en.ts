@@ -1,0 +1,73 @@
+/** English text for the Persian source strings, used when the page direction is LTR (see lib/i18n.ts).
+ *  Keys are the exact Persian strings passed to `t()`. A missing key falls back to the Persian text. */
+export const EN: Record<string, string> = {
+  // shell
+  "دستیار هوشمند DevOps": "DevOps Smart Assistant",
+  "دستیار DevOps": "DevOps Assistant",
+  "ورود به سامانه‌ی داخلی": "Sign in to the internal system",
+  "ایمیل": "Email",
+  "رمز عبور": "Password",
+  "ورود": "Sign in",
+  "خروج": "Sign out",
+  "ناوبری اصلی": "Main navigation",
+  "گفتگو": "Chat",
+  "آموزش‌های من": "My lessons",
+  "مدیریت": "Admin",
+
+  // preferences
+  "حالت روشن": "Light mode",
+  "حالت تاریک": "Dark mode",
+  "تغییر جهت صفحه (راست‌چین / چپ‌چین)": "Switch page direction and language (RTL Persian / LTR English)",
+  "تغییر جهت صفحه": "Switch page direction and language",
+
+  // chat sidebar
+  "گفتگوها": "Conversations",
+  "گفتگوی جدید": "New chat",
+  "آموزش به هوش مصنوعی": "Teach the AI",
+  "هنوز گفتگویی ندارید.": "You have no conversations yet.",
+  "گفتگوی آموزشی": "Teaching chat",
+
+  // composer
+  "تصاویر پیوست": "Attached images",
+  "دستورهای MCP": "MCP commands",
+  "↑↓ انتخاب · Enter / Tab تأیید · Esc بستن · برای انتخاب ابزار بعد از نام سرور @ بزنید": "↑↓ select · Enter / Tab confirm · Esc close · type @ after a server name to pick a tool",
+  "پیوست تصویر": "Attach image",
+  "پیوست تصویر (می‌توانید تصویر را اینجا Paste یا Drop هم کنید)": "Attach image (you can also paste or drop one here)",
+  "پیام": "Message",
+  "حذف": "Remove",
+  "ارسال پیام": "Send message",
+  "ارسال (Enter)": "Send (Enter)",
+
+  // labels
+  "حل‌نشده": "Unresolved",
+  "در انتظار بازبینی": "Pending review",
+  "حل‌شده": "Resolved",
+  "در انتظار تأیید ادمین": "Awaiting admin approval",
+  "تأییدشده و فعال": "Approved and active",
+  "ردشده": "Rejected",
+  "آموزش تأییدشده": "Approved lesson",
+  "مستندات GitHub": "GitHub docs",
+  "مستندات داخلی": "Internal docs",
+  "مستند داخلی": "Internal doc",
+  "راه‌حل تأییدشده": "Confirmed solution",
+  "کش وب": "Web cache",
+  "وب (جستجوی جدید)": "Web (fresh search)",
+  "داکر": "Docker",
+  "ابزار MCP": "MCP tool",
+  "بدون منبع": "No source",
+  "وب": "Web",
+  "بدون جستجوی وب": "No web search",
+  "از کش (جستجوی وب انجام نشد)": "From cache (no web search made)",
+  "ادغام با جستجوی هم‌زمان": "Merged with a concurrent search",
+  "جستجوی تازه در وب": "Fresh web search",
+  "جستجوی وب ناموفق": "Web search failed",
+  "خواندن تصویر پیوست…": "Reading the attached image…",
+  "بررسی پاسخ‌های ذخیره‌شده…": "Checking saved answers…",
+  "بررسی کانتینر / CI…": "Checking containers / CI…",
+  "تحلیل خطا…": "Analysing the error…",
+  "جستجو در مستندات داخلی…": "Searching internal docs…",
+  "بررسی راه‌حل‌های تأییدشده و کش وب…": "Checking confirmed solutions and web cache…",
+  "جستجو در وب…": "Searching the web…",
+  "نوشتن پاسخ…": "Writing the answer…",
+  "در حال اجرای ابزار MCP…": "Running the MCP tool…",
+};

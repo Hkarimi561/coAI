@@ -3,6 +3,7 @@
 import { ArrowLeftRight, Moon, Sun } from "lucide-react";
 import { useEffect, useState, type MouseEvent } from "react";
 
+import { setDir, useDir, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -43,9 +44,7 @@ function applyTheme(dark: boolean, origin?: { x: number; y: number }) {
 }
 
 function applyDir(dir: "rtl" | "ltr") {
-  const set = () => {
-    document.documentElement.dir = dir;
-  };
+  const set = () => setDir(dir);
   if (!reducedMotion() && typeof document.startViewTransition === "function") document.startViewTransition(set);
   else set();
 }
@@ -54,8 +53,26 @@ const btn =
   "relative inline-flex h-9 items-center justify-center gap-1.5 overflow-hidden rounded-md border border-border bg-card px-2.5 text-xs font-medium transition-colors hover:bg-muted";
 
 export function ThemeToggle({ className }: { className?: string }) {
+  const t = useT();
   const [dark, setDark] = useState(false);
-  useEffect(() => setDark(document.documentElement.classList.contains("dark")), []);
+  useEffect(() => {
+    setDark(document.documentElement.classList.contains("dark"));
+    // until the user picks a mode, follow the operating system (also when it changes while the page is open)
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const follow = () => {
+      let saved: string | null = null;
+      try {
+        saved = localStorage.getItem("theme");
+      } catch {
+        /* ignore */
+      }
+      if (saved) return;
+      setDark(mq.matches);
+      applyTheme(mq.matches);
+    };
+    mq.addEventListener("change", follow);
+    return () => mq.removeEventListener("change", follow);
+  }, []);
 
   function toggle(e: MouseEvent<HTMLButtonElement>) {
     const next = !dark;
@@ -66,7 +83,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   }
 
   return (
-    <button type="button" onClick={toggle} className={cn(btn, "w-9 px-0", className)} aria-label={dark ? "حالت روشن" : "حالت تاریک"} title={dark ? "حالت روشن" : "حالت تاریک"}>
+    <button type="button" onClick={toggle} className={cn(btn, "w-9 px-0", className)} aria-label={t(dark ? "حالت روشن" : "حالت تاریک")} title={t(dark ? "حالت روشن" : "حالت تاریک")}>
       <Sun className={cn("absolute h-4 w-4 transition-all duration-500", dark ? "rotate-90 scale-0 opacity-0" : "rotate-0 scale-100 opacity-100")} />
       <Moon className={cn("absolute h-4 w-4 transition-all duration-500", dark ? "rotate-0 scale-100 opacity-100" : "-rotate-90 scale-0 opacity-0")} />
     </button>
@@ -74,20 +91,19 @@ export function ThemeToggle({ className }: { className?: string }) {
 }
 
 export function DirToggle({ className }: { className?: string }) {
-  const [dir, setDir] = useState<"rtl" | "ltr">("rtl");
+  const t = useT();
+  const dir = useDir();
   const [turns, setTurns] = useState(0);
-  useEffect(() => setDir(document.documentElement.dir === "ltr" ? "ltr" : "rtl"), []);
 
   function toggle() {
     const next = dir === "rtl" ? "ltr" : "rtl";
-    setDir(next);
     setTurns((t) => t + 1);
     store("dir", next);
     applyDir(next);
   }
 
   return (
-    <button type="button" onClick={toggle} className={cn(btn, className)} aria-label="تغییر جهت صفحه (راست‌چین / چپ‌چین)" title="تغییر جهت صفحه">
+    <button type="button" onClick={toggle} className={cn(btn, className)} aria-label={t("تغییر جهت صفحه (راست‌چین / چپ‌چین)")} title={t("تغییر جهت صفحه")}>
       <ArrowLeftRight className="h-4 w-4 transition-transform duration-500" style={{ transform: `rotate(${turns * 180}deg)` }} />
       <span className="ltr font-mono tracking-wide">{dir.toUpperCase()}</span>
     </button>
