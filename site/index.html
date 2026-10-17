@@ -933,7 +933,128 @@ function rb(){const t=$('#rbTab');t.innerHTML='<tr><th>Container</th><th>User A 
 $('#rbAct').onchange=rb;rb();
 })();
 </script>
-<footer class="muted small" style="margin-top:56px;padding-top:16px;border-top:1px solid var(--bd)">Simulator logic comes from backend/app/services (workflow, chunker, textnorm, websearch, vectorstore, embeddings), api/chat.py, main.py, config.py and docker-compose.yml. The dashboard section uses sample data.</footer>
+<section class="sec" id="img">
+<header><span class="eyebrow">11 · Image processing</span><h2>Screenshots: from upload to answer</h2>
+<p>Users can attach screenshots of an error (terminal output, a dashboard, a browser console). Every file is treated as untrusted input: it is validated, re-encoded and stored by <code>services/images.py</code>; then a vision model reads it so retrieval and web search can work from what the picture shows; finally the answer model sees the picture itself. Change the file below and watch which rule fires.</p></header>
+
+<div class="grid g2" style="align-items:start">
+ <div class="card" style="display:grid;gap:10px">
+  <h3 style="font-size:18px">Try an upload</h3>
+  <label class="f" style="display:grid;gap:2px"><span>File type</span>
+   <select id="imFmt"><option value="PNG">PNG screenshot</option><option value="JPEG">JPEG photo</option><option value="WEBP">WebP</option><option value="GIF">GIF (animated)</option><option value="BMP">BMP</option><option value="PDF">PDF renamed to .png</option></select></label>
+  <label class="f" style="display:grid;gap:2px"><span>File size: <b id="imMbV"></b> MB <span class="muted small">(limit <code>MAX_IMAGE_MB</code> = 8)</span></span><input type="range" id="imMb" min="0.1" max="16" step="0.1" value="2.4"></label>
+  <label class="f" style="display:grid;gap:2px"><span>Width: <b id="imWV"></b> px</span><input type="range" id="imW" min="200" max="12000" step="10" value="3200"></label>
+  <label class="f" style="display:grid;gap:2px"><span>Height: <b id="imHV"></b> px</span><input type="range" id="imH" min="200" max="12000" step="10" value="1800"></label>
+  <label class="f" style="display:grid;gap:2px"><span>Images in this message: <b id="imNV"></b> <span class="muted small">(limit <code>MAX_IMAGES_PER_MESSAGE</code> = 4)</span></span><input type="range" id="imN" min="1" max="6" value="2"></label>
+  <div class="row">
+   <label class="f"><input type="checkbox" id="imExif" checked> Has EXIF / GPS metadata</label>
+   <label class="f"><input type="checkbox" id="imPay"> Hidden payload appended after the image data</label>
+   <label class="f"><input type="checkbox" id="imVis" checked> Chat model accepts images (<code>LLM_VISION</code>)</label>
+  </div>
+ </div>
+ <div class="card" style="display:grid;gap:10px">
+  <div class="row" style="justify-content:space-between"><h3 style="font-size:18px">What the server does</h3><span id="imVerdict" class="tag"></span></div>
+  <ol id="imLog" class="tight small" style="list-style:none;padding:0;display:grid;gap:6px"></ol>
+  <div id="imOut" class="note"></div>
+ </div>
+</div>
+
+<div class="card" style="margin-top:16px;display:grid;gap:10px">
+ <h3 style="font-size:18px">The whole path of one screenshot</h3>
+ <div class="steps" id="imFlow"></div>
+ <div id="imFlowNote" class="note" style="min-height:48px"></div>
+</div>
+
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Two different uses of the image</h3>
+  <ul class="tight small">
+   <li><b>1 · Transcription call.</b> One short vision request (<code>READ_IMAGE_PROMPT</code>, max 700 tokens) copies every error line, command, URL and status code visible in the picture. The text is passed through <code>redact()</code> (secrets and tokens are masked) and cut to 1,500 characters. Its first 500 characters are appended to the user’s message, so document search, the error signature and the web query “see” the screenshot.</li>
+   <li><b>2 · Answer call.</b> The answer model receives the real images again (OpenAI <code>image_url</code> or Ollama <code>images</code>), plus the transcription inside <code>&lt;untrusted_screenshot_text&gt;</code> and rule 13: describe what it shows, quote the exact error, and say so if the picture is unreadable.</li>
+   <li>If only an image is sent without text, a default request (“look at the attached screenshot, explain the problem, suggest a fix”) is used.</li>
+   <li>If <code>LLM_VISION=false</code>, no image is sent anywhere; the model is told to say it cannot see images and ask for the pasted error text.</li>
+  </ul></div>
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">What the user sees</h3>
+  <ul class="tight small">
+   <li>An attach button next to the message box; screenshots can also be <b>pasted</b> (Ctrl+V) or <b>dragged</b> into it.</li>
+   <li>Thumbnails appear above the box with a remove button. The browser pre-checks the limits (4 images, 8 MB each) before anything is uploaded.</li>
+   <li>On send, the conversation is created if needed, each file is uploaded to <code>POST /chat/conversations/{id}/images</code>, and the returned ids go with the message as <code>image_ids</code>.</li>
+   <li>While the server works the status line shows “Reading the attached image…”, then the usual search steps.</li>
+   <li>In the thread, thumbnails sit above the question and open full size in a lightbox; images are served by an authenticated endpoint with <code>nosniff</code> and a private cache header.</li>
+   <li>Answers about a screenshot are never replayed from the answer cache and never written to the web cache, because the same text with a different picture is a different question.</li>
+  </ul></div>
+</div>
+
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Safety layers</h3>
+  <div class="scroll"><table class="t">
+   <tr><th>Threat</th><th>Defence</th></tr>
+   <tr><td>Fake or malformed file</td><td>Decoded by Pillow; format must be PNG, JPEG, WebP or GIF, otherwise HTTP 400.</td></tr>
+   <tr><td>Decompression bomb</td><td><code>MAX_IMAGE_PIXELS</code> = 60 M; the upload size is read with a hard cap of limit + 1 bytes.</td></tr>
+   <tr><td>Hidden payload, EXIF, GPS</td><td>The image is fully re-encoded from pixels (JPEG/WebP q88, PNG optimised); metadata and trailing data are not copied.</td></tr>
+   <tr><td>Path traversal</td><td>The stored name is a random 32-hex id plus a fixed extension; lookups reject anything else. The user’s filename is only kept as a sanitised label (≤ 80 chars).</td></tr>
+   <tr><td>Other users’ files</td><td>Files live under <code>uploads/&lt;conversation&gt;/</code>; only the conversation owner can upload and the read endpoint checks ownership.</td></tr>
+   <tr><td>Abuse</td><td>Rate limit of 60 uploads per minute per user.</td></tr>
+   <tr><td>Secrets in the picture</td><td>Transcribed text is redacted before it is stored, searched or sent to the answer model.</td></tr>
+   <tr><td>Prompt injection in the picture</td><td>The vision prompt says never to follow instructions inside the image; the text is wrapped as untrusted data and its closing tag is neutralised.</td></tr>
+  </table></div></div>
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Settings (<code>config.py</code>)</h3>
+  <div class="scroll"><table class="t">
+   <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+   <tr><td><code>LLM_VISION</code></td><td>true</td><td>The chat model can read images. Turn off for text-only models.</td></tr>
+   <tr><td><code>MAX_IMAGE_MB</code></td><td>8</td><td>Largest accepted upload.</td></tr>
+   <tr><td><code>MAX_IMAGES_PER_MESSAGE</code></td><td>4</td><td>Images per message (extra ones are rejected).</td></tr>
+   <tr><td><code>IMAGE_MAX_SIDE</code></td><td>1600 px</td><td>Longest side after downscaling (LANCZOS); smaller images are never enlarged.</td></tr>
+   <tr><td><code>UPLOADS_DIR</code></td><td>/data/uploads</td><td>Where sanitised files are stored.</td></tr>
+  </table></div>
+  <p class="small muted" style="margin-top:10px">The message itself stores only <code>{id, name, ext, width, height, size}</code> in its metadata, never the pixels. The admin conversation view shows the transcription that was extracted, which helps when an answer looks wrong.</p></div>
+</div>
+</section>
+<script>
+addSection('img','Image processing');
+(()=>{
+const L={maxMb:8,maxN:4,side:1600,px:60e6};
+const ok=['PNG','JPEG','WEBP','GIF'],OUT={PNG:'png',JPEG:'jpg',WEBP:'webp',GIF:'png'};
+const el=id=>document.getElementById(id);
+const FLOW=[['Pick files','paste, drop or attach; browser checks 4 images / 8 MB','The browser keeps a local preview (blob URL) of each file and refuses extra or oversized ones before uploading.'],
+ ['Upload','POST …/images, one file per request','Owner-only, rate limited. The body is read with a hard cap so a huge file is never buffered.'],
+ ['Sanitise','decode, rotate, shrink, re-encode','Pillow decodes the file, applies the EXIF orientation, downsizes to 1600 px and re-encodes. Metadata and appended bytes are gone.'],
+ ['Store','uploads/<conv>/<id>.<ext>','A random id is the file name. The message keeps only the id and size info.'],
+ ['Read (vision)','transcribe → redact → ≤ 1500 chars','One vision call turns the picture into text. Secrets are masked; the text is later treated as untrusted data.'],
+ ['Retrieve','message + first 500 chars of the text','Document, solution and web search, the error signature and the web query now include what the screenshot says.'],
+ ['Answer','model sees text + the images','The final prompt carries the images and the untrusted transcription. Caches are bypassed for this turn.']];
+const fl=el('imFlow');let cur=0;
+FLOW.forEach(([t,s],i)=>{const d=H('div',{class:'step',tabindex:'0',role:'button',html:`<b>${i+1} · ${t}</b>${esc(s)}`});const pick=()=>{cur=i;paint()};d.onclick=pick;d.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick()}};fl.append(d)});
+function paint(){[...fl.children].forEach((c,i)=>{c.classList.toggle('on',i===cur);c.classList.toggle('done',i<cur)});el('imFlowNote').textContent=FLOW[cur][2]}
+paint();
+function run(){
+ const fmt=el('imFmt').value,mb=+el('imMb').value,w=+el('imW').value,h=+el('imH').value,n=+el('imN').value;
+ el('imMbV').textContent=mb.toFixed(1);el('imWV').textContent=fa(w);el('imHV').textContent=fa(h);el('imNV').textContent=n;
+ const log=[],add=(s,t,m)=>log.push([s,t,m]);let stop=null;
+ const rule=(cond,name,okMsg,failMsg)=>{if(stop){add('skip',name,'not reached');return}if(cond){stop=failMsg;add('bad',name,failMsg)}else add('ok',name,okMsg)};
+ rule(n>L.maxN,'Count',`${n} image${n>1?'s':''} ≤ ${L.maxN}`,`At most ${L.maxN} images per message (HTTP 400)`);
+ rule(mb>L.maxMb,'File size',`${mb.toFixed(1)} MB ≤ ${L.maxMb} MB`,`The image is larger than ${L.maxMb} MB (HTTP 400)`);
+ const valid=fmt!=='PDF';
+ rule(!valid,'Decode','Pillow can open the file','The file is not a valid image (HTTP 400)');
+ rule(valid&&!ok.includes(fmt),'Format',`${fmt} is allowed`,'Only PNG, JPEG, WebP or GIF images are supported (HTTP 400)');
+ rule(w*h>L.px,'Pixel guard',`${fa(w*h)} px ≤ ${fa(L.px)}`,'Decompression-bomb guard: not a valid image (HTTP 400)');
+ let nw=w,nh=h,ext=OUT[fmt]||'—';
+ if(!stop){add(el('imExif').checked?'chg':'ok','EXIF',el('imExif').checked?'orientation applied, then EXIF/GPS dropped':'no metadata to drop','');
+  const big=Math.max(w,h)>L.side;if(big){const k=L.side/Math.max(w,h);nw=Math.round(w*k);nh=Math.round(h*k)}
+  add(big?'chg':'ok','Resize',big?`${fa(w)}×${fa(h)} → ${fa(nw)}×${fa(nh)} (longest side ${L.side})`:'already within 1600 px, kept as is','');
+  add(el('imPay').checked?'chg':'ok','Re-encode',`saved as .${ext}${fmt==='GIF'?' (first frame only)':''}${el('imPay').checked?'; the appended payload is not copied':''}`,'');
+  add('ok','Store',`uploads/<conv>/<32-hex id>.${ext}`,'');}
+ const bad=!!stop;
+ el('imLog').innerHTML=log.map(([s,t,m])=>`<li class="row" style="gap:8px;align-items:baseline"><span class="tag ${s==='ok'?'ok':s==='bad'?'bad':s==='chg'?'warn':''}" style="min-width:76px;text-align:center">${s==='ok'?'pass':s==='bad'?'blocked':s==='chg'?'changed':'skipped'}</span><b>${t}</b><span class="muted">${esc(m)}</span></li>`).join('');
+ const v=el('imVerdict');v.className='tag '+(bad?'bad':'ok');v.textContent=bad?'rejected':'accepted';
+ let out;
+ if(bad)out=`<b>Nothing is stored.</b> The user sees: “${esc(stop)}”. The browser would normally stop earlier for count and size.`;
+ else{const vis=el('imVis').checked;
+  out=`<b>Stored:</b> ${fa(nw)}×${fa(nh)} .${ext}. `+(vis?`Next the vision model transcribes it, the text is redacted, and the first 500 characters join the search query. The answer model then receives the picture and the transcription. This turn is not cached.`:`<code>LLM_VISION</code> is off: the image is kept for display but never sent to the model, which asks the user to paste the error text.`)}
+ el('imOut').innerHTML=out}
+['imFmt','imMb','imW','imH','imN','imExif','imPay','imVis'].forEach(i=>el(i).oninput=run);run();
+})();
+</script>
+<footer class="muted small" style="margin-top:56px;padding-top:16px;border-top:1px solid var(--bd)">Simulator logic comes from backend/app/services (workflow, chunker, textnorm, websearch, vectorstore, embeddings), api/chat.py, services/images.py, main.py, config.py and docker-compose.yml. The dashboard section uses sample data.</footer>
 </div>
 <script>
 (()=>{const nav=document.getElementById('nav');
