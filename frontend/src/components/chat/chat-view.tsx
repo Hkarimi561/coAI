@@ -25,7 +25,18 @@ interface Live {
   text: string;
   thinking: string;
   step: string | null;
+  /** local previews of the screenshots sent with this message */
+  images?: string[];
 }
+
+interface Attachment {
+  file: File;
+  url: string;
+  name: string;
+}
+
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const EXAMPLES = ["چطور Nginx را ریستارت کنم؟", "آخرین خطای کانتینر X چیست؟", "چرا آخرین بیلد شکست خورد؟"];
 
@@ -50,9 +61,9 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
   });
 
   const send = useCallback(
-    async (id: string, content: string, refresh = false) => {
+    async (id: string, content: string, refresh = false, imageIds: string[] = [], previews: string[] = []) => {
       setError(null);
-      setLive({ user: content, text: "", thinking: "", step: null });
+      setLive({ user: content, text: "", thinking: "", step: null, images: previews });
       try {
         await streamMessage(
           id,
@@ -63,16 +74,40 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
           onToken: (t) => setLive((l) => (l ? { ...l, text: l.text + t } : l)),
           },
           refresh,
+          imageIds,
         );
       } catch (e) {
         setError(e);
       } finally {
         await Promise.all([qc.invalidateQueries({ queryKey: ["conversation", id] }), qc.invalidateQueries({ queryKey: ["conversations"] })]);
         setLive(null);
+        previews.forEach((u) => URL.revokeObjectURL(u));
       }
     },
     [qc],
   );
+
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const addFiles = (files: File[]) => {
+    const ok = files.filter((f) => f.size <= MAX_IMAGE_BYTES).slice(0, Math.max(MAX_IMAGES - attachments.length, 0));
+    if (ok.length < files.length) setError(new Error(`حداکثر ${MAX_IMAGES} تصویر و هر کدام تا ${MAX_IMAGE_BYTES / 1024 / 1024} مگابایت مجاز است.`));
+    if (ok.length) setAttachments([...attachments, ...ok.map((file) => ({ file, url: URL.createObjectURL(file), name: file.name || "screenshot" }))]);
+  };
+  const removeAttachment = (i: number) => {
+    const gone = attachments[i];
+    if (gone) URL.revokeObjectURL(gone.url);
+    setAttachments(attachments.filter((_, k) => k !== i));
+  };
+  const uploadAttachments = useCallback(async (id: string, list: Attachment[]): Promise<string[]> => {
+    const ids: string[] = [];
+    for (const a of list) {
+      const form = new FormData();
+      form.append("file", a.file, a.name);
+      ids.push((await api.upload<{ id: string }>(`/chat/conversations/${id}/images`, form)).id);
+    }
+    return ids;
+  }, []);
 
   // The user left this page while an answer was being generated and came back: re-attach and show the progress again.
   const liveRef = useRef<Live | null>(null);
@@ -114,7 +149,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
   useEffect(() => {
     if (!conversationId) return;
     const first = takePendingMessage(conversationId);
-    if (first) void send(conversationId, first);
+    if (first) void send(conversationId, first.content, false, first.imageIds, first.previews);
   }, [conversationId, send]);
 
   useEffect(() => {
@@ -143,21 +178,40 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
 
   async function submit() {
     const content = draft.trim();
-    if (!content || live || status.data?.indexing) return;
+    const files = teach ? [] : attachments;
+    if ((!content && !files.length) || live || uploading || status.data?.indexing) return;
+    setError(null);
     setDraft("");
-    if (!conversationId) {
-      try {
-        const c = await api.post<Conversation>("/chat/conversations", { mode: teach ? "teach" : "support" });
-        setPendingMessage(c.id, content);
-        await qc.invalidateQueries({ queryKey: ["conversations"] });
-        router.replace(`/chat/${c.id}`);
-      } catch (e) {
-        setError(e);
-        setDraft(content);
+    setAttachments([]);
+    const restore = () => {
+      setDraft(content);
+      setAttachments(files);
+    };
+    let target = conversationId;
+    let imageIds: string[] = [];
+    try {
+      if (!target) target = (await api.post<Conversation>("/chat/conversations", { mode: teach ? "teach" : "support" })).id;
+      if (files.length) {
+        setUploading(true);
+        imageIds = await uploadAttachments(target, files);
       }
+    } catch (e) {
+      setError(e);
+      restore();
+      if (!conversationId && target) void qc.invalidateQueries({ queryKey: ["conversations"] });
+      return;
+    } finally {
+      setUploading(false);
+    }
+    if (!target) return;
+    const previews = files.map((a) => a.url); // handed over to the live bubble, revoked when the answer is done
+    if (!conversationId) {
+      setPendingMessage(target, content, imageIds, previews);
+      await qc.invalidateQueries({ queryKey: ["conversations"] });
+      router.replace(`/chat/${target}`);
       return;
     }
-    await send(conversationId, content);
+    await send(conversationId, content, false, imageIds, previews);
   }
 
   const messages = detail.data?.messages ?? [];
@@ -195,7 +249,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
 
           {messages.map((m) => (
             <div key={m.id} className="space-y-2">
-              <MessageBubble message={m} />
+              <MessageBubble message={m} conversationId={conversationId} />
               {m.id === lastAssistantId && m.meta.awaiting_feedback && !live ? (
                 <div className="flex flex-wrap items-center gap-2 ps-11">
                   <span className="text-sm text-muted-foreground">آیا این راه‌حل مشکل را حل کرد؟</span>
@@ -221,7 +275,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
 
           {live ? (
             <>
-              {live.user !== null ? <MessageBubble message={{ role: "user", content: live.user, citations: [], meta: {} }} /> : null}
+              {live.user !== null ? <MessageBubble message={{ role: "user", content: live.user, citations: [], meta: {} }} localImages={live.images} /> : null}
               {live.thinking ? <div className="ps-11"><ThinkingPanel text={live.thinking} streaming={!live.text} /></div> : null}
               {live.text ? (
                 <MessageBubble message={{ role: "assistant", content: live.text, citations: [], meta: {} }} streaming />
@@ -269,8 +323,11 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
             value={draft}
             onChange={setDraft}
             onSubmit={() => void submit()}
-            busy={!!live}
+            busy={!!live || uploading}
             commands={teach ? undefined : mcpCommands.data}
+            attachments={attachments}
+            onAddFiles={teach ? undefined : addFiles}
+            onRemoveAttachment={removeAttachment}
             trailing={<ContextUsage messages={messages} contextWindow={status.data?.context_window} />}
             lockedReason={status.data?.indexing ? "مستندات در حال ایندکس شدن است؛ چت پس از پایان ایندکس فعال می‌شود…" : undefined}
             placeholder={teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}

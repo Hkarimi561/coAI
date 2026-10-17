@@ -1,15 +1,22 @@
 // Hand-off of the first message from /chat (no conversation yet) to /chat/[id] after the conversation was created.
-let pending: { id: string; content: string } | null = null;
+export interface PendingMessage {
+  content: string;
+  imageIds: string[];
+  /** local previews of the uploaded images, shown while the answer streams */
+  previews: string[];
+}
 
-export const setPendingMessage = (id: string, content: string): void => {
-  pending = { id, content };
+let pending: (PendingMessage & { id: string }) | null = null;
+
+export const setPendingMessage = (id: string, content: string, imageIds: string[] = [], previews: string[] = []): void => {
+  pending = { id, content, imageIds, previews };
 };
 
-export const takePendingMessage = (id: string): string | null => {
+export const takePendingMessage = (id: string): PendingMessage | null => {
   if (pending && pending.id === id) {
-    const { content } = pending;
+    const { content, imageIds, previews } = pending;
     pending = null;
-    return content;
+    return { content, imageIds, previews };
   }
   return null;
 };

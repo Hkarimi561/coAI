@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = ""  # OpenAI-compatible servers (LM Studio): none | low | medium | high; empty = model default
     llm_think: bool = False  # Ollama only: enable "thinking" mode for reasoning models
     llm_grader_enabled: bool = False  # extra LLM call to validate that retrieved context really answers the question
+    llm_vision: bool = True  # the chat model accepts images (OpenAI image_url / Ollama images); set false for text-only models
+
+    # --- Image attachments (screenshots of bugs) ---
+    uploads_dir: str = "/data/uploads"
+    max_image_mb: int = 8  # per uploaded file
+    max_images_per_message: int = 4
+    image_max_side: int = 1600  # larger images are downscaled before being stored / sent to the model
 
     # --- Embeddings -------------------------------------------------------
     embedding_provider: str = "local"  # "local" (sentence-transformers) | "ollama" | "openai"

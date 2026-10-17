@@ -5,15 +5,30 @@ import { AlertTriangle, Bot, User as UserIcon } from "lucide-react";
 import { ThinkingPanel } from "@/components/chat/thinking-panel";
 import { MessageTiming } from "@/components/chat/message-timing";
 import { CitationList } from "@/components/chat/citations";
+import { MessageImages } from "@/components/chat/message-images";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
 import { SOURCE_LABEL, WEB_EVENT_LABEL } from "@/lib/labels";
 import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-export function MessageBubble({ message, streaming = false }: { message: Pick<Message, "role" | "content" | "citations" | "meta">; streaming?: boolean }) {
+interface BubbleProps {
+  message: Pick<Message, "role" | "content" | "citations" | "meta">;
+  streaming?: boolean;
+  /** needed to build the URLs of attached images */
+  conversationId?: string | null;
+  /** local previews (blob URLs) of images that were just sent and are not part of the saved history yet */
+  localImages?: string[];
+}
+
+export function MessageBubble({ message, streaming = false, conversationId, localImages }: BubbleProps) {
   const isUser = message.role === "user";
   const meta = message.meta;
+  const imageUrls = localImages?.length
+    ? localImages
+    : conversationId
+      ? (meta.images ?? []).map((i) => `/api/chat/conversations/${conversationId}/images/${i.id}`)
+      : [];
   return (
     <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
       <div
@@ -30,7 +45,10 @@ export function MessageBubble({ message, streaming = false }: { message: Pick<Me
       >
         {isUser ? (
           // Pasted logs must stay readable: each line picks its own direction, whitespace is preserved.
-          <UserText text={message.content} />
+          <>
+            <MessageImages urls={imageUrls} />
+            {message.content ? <UserText text={message.content} /> : null}
+          </>
         ) : (
           <>
             {meta.thinking ? <ThinkingPanel text={meta.thinking} /> : null}

@@ -4,7 +4,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.models import Conversation, Lesson, McpServer, Message, User
 from app.redis_client import get_redis, rate_limit
 from app.schemas import ConversationOut, CreateConversationIn, FeedbackIn, FeedbackOut, LessonOut, MessageOut, SendMessageIn
 from app.security import get_current_user
-from app.services import ingestion, mcp_command
+from app.services import images, ingestion, mcp_command
 from app.services.chat_service import run_turn, submit_feedback
 from app.services.lessons import submit_lesson
 
@@ -114,6 +114,37 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+@router.post("/conversations/{conversation_id}/images", status_code=201)
+async def upload_image(
+    conversation_id: uuid.UUID, file: UploadFile = File(...), user: User = Depends(get_current_user)
+) -> dict[str, Any]:
+    """Attach a screenshot: stored sanitised on disk; send its id with the next message (`image_ids`)."""
+    async with SessionLocal() as session:
+        convo = await get_owned_conversation(session, user, conversation_id)
+    if convo.user_id != user.id:
+        raise HTTPException(403, "Only the conversation owner can upload images")
+    await rate_limit(f"upload:{user.id}", 60, 60)
+    limit = get_settings().max_image_mb * 1024 * 1024
+    raw = await file.read(limit + 1)  # never buffer more than the limit
+    try:
+        stored = await images.save(conversation_id, raw, file.filename or "image")
+    except images.ImageError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return stored.meta()
+
+
+@router.get("/conversations/{conversation_id}/images/{image_id}")
+async def get_image(conversation_id: uuid.UUID, image_id: str, user: User = Depends(get_current_user)) -> FileResponse:
+    async with SessionLocal() as session:
+        await get_owned_conversation(session, user, conversation_id)
+    found = images.find(conversation_id, image_id)
+    if found is None:
+        raise HTTPException(404, "Image not found")
+    path, mime = found
+    return FileResponse(path, media_type=mime, headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+                                                         "Content-Disposition": "inline"})
+
+
 @router.post("/conversations/{conversation_id}/messages")
 async def send_message(
     conversation_id: uuid.UUID,
@@ -128,6 +159,11 @@ async def send_message(
     if await ingestion.is_indexing():
         raise HTTPException(503, "Documents are still being indexed; chat is disabled until indexing finishes")
     await rate_limit(f"chat:{user.id}", get_settings().chat_rate_limit_per_minute, 60)
+    image_ids = list(dict.fromkeys(body.image_ids))
+    if len(image_ids) > get_settings().max_images_per_message:
+        raise HTTPException(400, f"At most {get_settings().max_images_per_message} images per message")
+    if any(images.find(conversation_id, i) is None for i in image_ids):
+        raise HTTPException(400, "Unknown image; upload it to this conversation first")
 
     redis = get_redis()
     lock_key, token = f"turn:{conversation_id}", uuid.uuid4().hex
@@ -142,7 +178,7 @@ async def send_message(
 
     async def runner() -> None:
         try:
-            await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit,
+            await run_turn(conversation_id=conversation_id, content=body.content, refresh=body.refresh, emit=emit, image_ids=image_ids,
                            user_id=user.id, all_containers=user.has_permission("containers.logs_all"))
         finally:
             if await redis.get(lock_key) == token:

@@ -57,6 +57,9 @@ export interface Citation {
 }
 
 export interface MessageMeta {
+  /** screenshots attached to a user message; served by GET /chat/conversations/{id}/images/{image id} */
+  images?: { id: string }[];
+  image_text?: string;
   awaiting_feedback?: boolean;
   feedback?: "confirmed" | "rejected";
   primary_source?: string;

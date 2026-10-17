@@ -25,7 +25,7 @@ RUN TH="${PIP_TRUSTED_HOST:+--trusted-host $PIP_TRUSTED_HOST}" \
        fi
 
 RUN useradd --uid ${APP_UID} --create-home app \
-    && mkdir -p /data/hf /data/docs \
+    && mkdir -p /data/hf /data/docs /data/uploads\
     && chown -R app:app /data
 
 COPY --chown=app:app . .

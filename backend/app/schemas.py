@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import Conversation, Message, User
 
@@ -105,8 +105,15 @@ class LessonEdit(BaseModel):
 
 
 class SendMessageIn(BaseModel):
-    content: str = Field(min_length=1, max_length=20000)
+    content: str = Field(default="", max_length=20000)
     refresh: bool = False  # search again: skip the answer cache and cached web research
+    image_ids: list[str] = Field(default_factory=list, max_length=8)  # ids returned by POST .../images
+
+    @model_validator(mode="after")
+    def _needs_content(self) -> "SendMessageIn":
+        if not self.content.strip() and not self.image_ids:
+            raise ValueError("A message needs text or an image")
+        return self
 
 
 class FeedbackIn(BaseModel):

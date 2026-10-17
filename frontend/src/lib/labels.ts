@@ -54,6 +54,7 @@ export const WEB_EVENT_LABEL: Record<string, string> = {
 };
 
 export const STEP_LABEL: Record<string, string> = {
+  read_image: "خواندن تصویر پیوست…",
   check_answer_cache: "بررسی پاسخ‌های ذخیره‌شده…",
   gather_tools: "بررسی کانتینر / CI…",
   plan_queries: "تحلیل خطا…",

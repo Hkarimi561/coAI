@@ -106,6 +106,7 @@ services:
     volumes:
       - ./docs:/data/docs
       - hf_cache:/data/hf
+      - uploads:/data/uploads
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -157,3 +158,4 @@ volumes:
   redis_data:
   qdrant_data:
   hf_cache:
+  uploads:

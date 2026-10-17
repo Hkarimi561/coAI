@@ -1,5 +1,6 @@
 """Persistence around the workflow: turns, feedback loop, candidate solutions."""
 
+import asyncio
 import json
 import logging
 import re
@@ -13,16 +14,17 @@ from qdrant_client import models
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Conversation, Feedback, Message, Solution, ToolCall, TurnEvent, User
 from app.redaction import redact, redact_obj
 from app.schemas import MessageOut
-from app.services import answer_cache, command_safety, mcp_command, memory
+from app.services import answer_cache, command_safety, images, mcp_command, memory
 from app.services.answer_cache import bump_kb_version
 from app.services.container import get_embedder, get_llm, get_vectorstore
 from app.services.lessons import TEACH_PROMPT
 from app.services.llm import LLMError
-from app.services.workflow import Emit, TroubleshootingWorkflow, TurnState, confidence_of
+from app.services.workflow import READ_IMAGE_PROMPT, Emit, TroubleshootingWorkflow, TurnState, confidence_of
 from app.textnorm import truncate_middle
 
 log = logging.getLogger(__name__)
@@ -51,13 +53,31 @@ def _usage_meta(usage: dict[str, int] | None, prompt_chars: int, output_text: st
     return {"prompt_tokens": p, "completion_tokens": c, "total_tokens": p + c, "estimated": est}
 
 
+IMAGE_ONLY_PROMPT = "لطفاً تصویر (اسکرین‌شات) پیوست‌شده را بررسی کن، مشکل را توضیح بده و راه‌حل پیشنهاد بده."
+IMAGE_NOTE = "\n[تصویر پیوست شده بود]"
+
+
 def _history_for_llm(rows: list[Message]) -> list[dict[str, str]]:
-    return [{"role": m.role, "content": truncate_middle(m.content, 1800)} for m in rows if m.meta.get("kind") != "request_error"]
+    return [{"role": m.role, "content": truncate_middle(m.content, 1800) + (IMAGE_NOTE if m.meta.get("images") else "")}
+            for m in rows if m.meta.get("kind") != "request_error"]
 
 
-async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False, user_id: uuid.UUID | None = None, all_containers: bool = False) -> None:
+async def _read_images(conversation_id: uuid.UUID, image_ids: list[str]) -> list[tuple[str, str]]:
+    return [x for i in image_ids if (x := await asyncio.to_thread(images.data_url, conversation_id, i))]
+
+
+async def _transcribe(imgs: list[tuple[str, str]]) -> str:
+    """One vision call that turns the screenshots into text, so retrieval and web search can work from what the image shows."""
+    llm = get_llm()
+    out = await llm.complete([{"role": "system", "content": READ_IMAGE_PROMPT}, llm.user_message("Transcribe this screenshot.", imgs)], max_tokens=700)
+    return redact(out).strip()[:1500]
+
+
+async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refresh: bool = False, user_id: uuid.UUID | None = None,
+                   all_containers: bool = False, image_ids: list[str] | None = None) -> None:
     """Runs one user turn end-to-end. Never raises; failures are emitted as `error` events."""
     try:
+        image_ids = image_ids or []
         redacted = redact(content).strip()
         short_research_request = len(redacted) < 80 and bool(_RESEARCH_RE.search(redacted))
         refresh = refresh or short_research_request
@@ -71,7 +91,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             ).scalars().all()
             history = _history_for_llm(list(reversed(prev)))
             # "search again" without a question means: redo the previous user question
-            effective = redacted
+            effective = redacted or (IMAGE_ONLY_PROMPT if image_ids else "")
             if short_research_request:
                 effective = next((m.content for m in prev if m.role == "user"), redacted)
 
@@ -81,8 +101,9 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
                 state = {"phase": "idle", "attempts": 0, "rejected_refs": [], "failed_summaries": [], "original_problem": effective[:1500],
                          "memory": state.get("memory")}
             if not convo.title:
-                convo.title = redacted.strip().splitlines()[0][:80] if redacted.strip() else "گفتگوی جدید"
-            user_msg = Message(conversation_id=conversation_id, role="user", content=redacted)
+                convo.title = redacted.strip().splitlines()[0][:80] if redacted.strip() else ("اسکرین‌شات" if image_ids else "گفتگوی جدید")
+            user_msg = Message(conversation_id=conversation_id, role="user", content=redacted,
+                               meta={"images": [{"id": i} for i in image_ids]} if image_ids else {})
             session.add(user_msg)
             convo.state = state
             convo.updated_at = datetime.now(UTC)
@@ -107,6 +128,17 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
         st = TurnState(conversation_id=str(conversation_id), message=effective, history=history, convo_state=state, refresh=refresh,
                        user_id=str(user_id) if user_id else None, all_containers=all_containers,
                        mcp_command=(cmd.server, cmd.tool) if cmd else None)
+        if image_ids:
+            if not get_settings().llm_vision:
+                st.notes.append("The user attached a screenshot but the model cannot view images. Say so briefly and ask them to paste the error text.")
+            else:
+                st.images = await _read_images(conversation_id, image_ids)
+                if st.images:
+                    await emit("status", {"step": "read_image"})
+                    try:
+                        st.image_text = await _transcribe(st.images)
+                    except LLMError as exc:  # the answer step will show the model failure; retrieval just lacks the screenshot text
+                        log.warning("Screenshot transcription failed: %s", exc)
         await _workflow.run(st, emit)
 
         sig = st.signature
@@ -120,6 +152,7 @@ async def run_turn(*, conversation_id: uuid.UUID, content: str, emit: Emit, refr
             "signature_key": sig.key if sig else None,
             "refs": st.refs,
             "notes": st.notes,
+            **({"image_text": st.image_text} if st.image_text else {}),
             "timings": _workflow.timings(st),
             **({"mcp_command": {"server": st.mcp_command[0], "tool": st.mcp_command[1]}} if st.mcp_command else {}),
             **({"confidence": confidence_of(st)} if not st.llm_error else {}),  # no badge when the model failed (the fallback only lists sources)

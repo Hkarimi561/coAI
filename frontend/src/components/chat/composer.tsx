@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Plug, Wrench } from "lucide-react";
+import { ArrowUp, ImagePlus, Plug, Wrench, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { Spinner } from "@/components/ui/misc";
@@ -21,7 +21,13 @@ interface Props {
   trailing?: ReactNode;
   /** MCP slash commands for the autocomplete: `/server request` and `/server@tool request` */
   commands?: McpCommand[];
+  /** screenshots queued for the next message (local preview URLs); omit `onAddFiles` to hide the attach controls */
+  attachments?: { url: string; name: string }[];
+  onAddFiles?: (files: File[]) => void;
+  onRemoveAttachment?: (index: number) => void;
 }
+
+const imagesOf = (files: FileList | File[] | null | undefined): File[] => Array.from(files ?? []).filter((f) => f.type.startsWith("image/"));
 
 interface Suggestion {
   insert: string;
@@ -61,9 +67,12 @@ function suggest(token: string | null, commands: McpCommand[]): Suggestion[] {
 
 /** Auto-growing message box. Enter sends, Shift+Enter inserts a new line; pasted logs keep their line breaks.
  *  Typing "/" opens an autocomplete of MCP servers; "/server@" lists that server's tools. */
-export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedReason, trailing, commands = [] }: Props) {
+export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedReason, trailing, commands = [], attachments = [], onAddFiles, onRemoveAttachment }: Props) {
   const locked = !!lockedReason;
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const canAttach = !!onAddFiles && !busy && !locked;
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -127,19 +136,54 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!busy && !locked && value.trim()) onSubmit();
+      if (!busy && !locked && (value.trim() || attachments.length)) onSubmit();
     }
   }
 
-  const canSend = !busy && !locked && value.trim().length > 0;
+  const canSend = !busy && !locked && (value.trim().length > 0 || attachments.length > 0);
   return (
     <div
       className={cn(
-        "relative flex items-end gap-2 rounded-2xl border border-border bg-background px-3 py-2 shadow-sm transition-shadow",
+        "relative flex flex-col gap-2 rounded-2xl border border-border bg-background px-3 py-2 shadow-sm transition-shadow",
         "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30",
         (busy || locked) && "opacity-70",
+        dragging && "border-primary ring-2 ring-primary/30",
       )}
+      onDragOver={(e) => {
+        if (!canAttach || !Array.from(e.dataTransfer.types).includes("Files")) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        setDragging(false);
+        const files = imagesOf(e.dataTransfer.files);
+        if (!canAttach || !files.length) return;
+        e.preventDefault();
+        onAddFiles?.(files);
+      }}
     >
+      {attachments.length ? (
+        <ul className="flex flex-wrap gap-2" aria-label="تصاویر پیوست">
+          {attachments.map((a, i) => (
+            <li key={a.url} className="group relative">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
+              <img src={a.url} alt={a.name} className="h-16 w-16 rounded-md border border-border object-cover" />
+              {onRemoveAttachment && !busy ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveAttachment(i)}
+                  aria-label={`حذف ${a.name}`}
+                  className="absolute -end-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-foreground text-background shadow hover:bg-danger"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="flex items-end gap-2">
       {open ? (
         <div role="listbox" aria-label="دستورهای MCP" className="absolute bottom-full start-0 end-0 z-30 mb-2 overflow-hidden rounded-lg border border-border bg-card shadow-lg">
           <div className="max-h-64 overflow-y-auto py-1">
@@ -171,9 +215,41 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
           </div>
         </div>
       ) : null}
+      {onAddFiles ? (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            hidden
+            onChange={(e) => {
+              const files = imagesOf(e.target.files);
+              if (files.length) onAddFiles(files);
+              e.target.value = ""; // allow picking the same file again
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={!canAttach}
+            aria-label="پیوست تصویر"
+            title="پیوست تصویر (می‌توانید تصویر را اینجا Paste یا Drop هم کنید)"
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ImagePlus className="h-5 w-5" />
+          </button>
+        </>
+      ) : null}
       <textarea
         ref={ref}
         value={value}
+        onPaste={(e) => {
+          const files = imagesOf(e.clipboardData.files);
+          if (!canAttach || !files.length) return; // plain text pastes keep their default behaviour
+          e.preventDefault();
+          onAddFiles?.(files);
+        }}
         onChange={(e) => {
           onChange(e.target.value);
           setCaret(e.target.selectionStart);
@@ -202,6 +278,7 @@ export function Composer({ value, onChange, onSubmit, busy, placeholder, lockedR
       >
         {busy ? <Spinner /> : <ArrowUp className="h-4 w-4" />}
       </button>
+      </div>
     </div>
   );
 }

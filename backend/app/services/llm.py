@@ -95,6 +95,16 @@ class LLMClient:
         self._ctx = (time.monotonic(), value)
         return value or configured
 
+    def user_message(self, text: str, images: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+        """A user turn, with optional images given as (mime, base64) pairs, in the wire format of the configured provider."""
+        if not images:
+            return {"role": "user", "content": text}
+        if self.s.llm_provider == "ollama":
+            return {"role": "user", "content": text, "images": [b64 for _, b64 in images]}
+        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        parts += [{"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}} for mime, b64 in images]
+        return {"role": "user", "content": parts}
+
     # -- request building -------------------------------------------------
     def _request(self, messages: list[dict[str, Any]], stream: bool, max_tokens: int | None, tools: list[dict] | None = None, tool_choice: str = "auto") -> tuple[str, dict]:
         s = self.s
@@ -229,7 +239,7 @@ class LLMClient:
         return True, f"{model} @ {self.base}"
 
     # -- one-shot ---------------------------------------------------------
-    async def complete(self, messages: list[dict[str, str]], max_tokens: int | None = None) -> str:
+    async def complete(self, messages: list[dict[str, Any]], max_tokens: int | None = None) -> str:
         url, body = self._request(messages, False, max_tokens)
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

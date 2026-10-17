@@ -113,7 +113,7 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
               const turn = turnByMessage(m.id);
               return (
                 <div key={m.id} className="space-y-1.5">
-                  <MessageBubble message={m} />
+                  <MessageBubble message={m} conversationId={id} />
                   {turn ? (
                     <div className="flex flex-wrap gap-1.5 pe-0 ps-11 text-xs">
                       <Badge>منبع اصلی: {SOURCE_LABEL[turn.primary_source] ?? turn.primary_source}</Badge>
