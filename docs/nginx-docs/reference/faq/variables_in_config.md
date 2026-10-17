@@ -1,0 +1,7 @@
+# Is there a proper way to use nginx variables to                make sections of the configuration shorter,                using them as macros for making                parts of configuration work as templates?
+
+ Q: Is there a proper way to use nginx variables to make sections of the configuration shorter, using them as macros for making parts of configuration work as templates? 
+
+   
+
+ A: Variables should not be used as template macros. Variables are evaluated in the run-time during the processing of each request, so they are rather costly compared to plain static configuration. Using variables to store static strings is also a bad idea. Instead, a macro expansion and "include" directives should be used to generate configs more easily and it can be done with the external tools, e.g. sed + make or any other common template mechanism.

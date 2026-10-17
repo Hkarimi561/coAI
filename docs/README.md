@@ -9,9 +9,9 @@ Every `*.md` file in this directory (recursively) is indexed into the vector dat
 
 The documents in this folder are **samples** that demonstrate the format; replace them with your own procedures.
 
-## Third-party documentation sets (not stored in git)
+## Third-party documentation sets
 
-Large public documentation sets can be placed next to the runbooks and are indexed the same way. They are **ignored by git** (see the root `.gitignore`) because they are about 50 MB, change often and belong to other projects. Keep your own runbooks tracked; put the sets below back into `docs/` on any new machine and press **Index changes** (or run the `ingest` command above).
+Large public documentation sets live next to the runbooks and are indexed the same way. They are tracked in git (about 50 MB) so every checkout has them; after pulling, press **Index changes** (or run the `ingest` command above).
 
 | Folder | Content | Format |
 |---|---|---|
@@ -25,4 +25,4 @@ Large public documentation sets can be placed next to the runbooks and are index
 
 - Both **`.md` and `.mdx`** files are indexed. MDX pages are converted to plain Markdown first: `import`/`export` lines, JSX comments and component tags are removed (their text stays), and the page title comes from the front matter or `export const title`. Code blocks and inline code such as `` `<Image>` `` are kept as written.
 - Respect each project's licence when you copy documentation into your deployment.
-- To start without them, simply leave the folders out; the assistant then relies on your runbooks, confirmed solutions, the web and MCP tools.
+- To start without them, delete the folders; the assistant then relies on your runbooks, confirmed solutions, the web and MCP tools.

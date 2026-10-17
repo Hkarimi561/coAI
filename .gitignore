@@ -8,12 +8,3 @@ frontend/next-env.d.ts
 frontend/tsconfig.tsbuildinfo
 docs/promoted/
 docs/uploads/
-
-# Third-party documentation sets (about 50 MB, re-addable). See docs/README.md.
-docs/angular-docs/
-docs/kubernetes/
-docs/nextjs-docs/
-docs/nginx-docs/
-docs/react-docs/
-docs/shadcn-docs/
-docs/tailwind-docs/
