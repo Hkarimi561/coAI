@@ -35,7 +35,7 @@ h1,h2,h3,h4{line-height:1.35;margin:0;text-wrap:balance}
 p{margin:0}
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px)))}
 .top{display:flex;align-items:center;gap:8px}.top .nav{flex:1;min-width:0}
-.themebtn{flex:none;margin-inline-end:max(16px,env(safe-area-inset-right,0px));border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:14px;font-weight:600;padding:6px 14px;border-radius:9999px;cursor:pointer}
+.themebtn{flex:none;margin-inline-end:max(16px,env(safe-area-inset-right,0px));border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:14px;font-weight:600;width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;cursor:pointer}
 .themebtn:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
 .nav{display:flex;gap:6px;overflow-x:auto;padding:10px max(16px,env(safe-area-inset-right,0px));scrollbar-width:thin}
 .nav button{flex:none;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:14px;font-weight:500;padding:6px 14px;border-radius:9999px;cursor:pointer}
@@ -1062,8 +1062,9 @@ function run(){
 </div>
 <script>
 (()=>{const root=document.documentElement,btn=document.getElementById('themeBtn'),mq=matchMedia('(prefers-color-scheme: dark)');
+const ic=p=>'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+p+'</svg>';const SUN=ic('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),MOON=ic('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>');
 const isDark=()=>root.dataset.theme?root.dataset.theme==='dark':mq.matches;
-const paint=()=>{const d=isDark();btn.textContent=d?'☀ Light mode':'🌙 Dark mode';btn.setAttribute('aria-label',d?'Switch to light mode':'Switch to dark mode');root.style.colorScheme=d?'dark':'light'};
+const paint=()=>{const d=isDark();btn.innerHTML=d?SUN:MOON;btn.title=d?'Switch to light mode':'Switch to dark mode';btn.setAttribute('aria-label',d?'Switch to light mode':'Switch to dark mode');root.style.colorScheme=d?'dark':'light'};
 btn.onclick=()=>{const n=isDark()?'light':'dark';root.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}paint()};
 mq.addEventListener('change',()=>{if(!root.dataset.theme)paint()});paint();
 })();
