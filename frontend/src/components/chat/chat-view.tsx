@@ -14,6 +14,7 @@ import { SystemStatusBar, useSystemStatus } from "@/components/system-status";
 import { Button } from "@/components/ui/button";
 import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { STEP_LABEL } from "@/lib/labels";
 import { takePendingMessage, setPendingMessage } from "@/lib/pending";
 import { attachStream, streamMessage } from "@/lib/sse";
@@ -41,6 +42,7 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 const EXAMPLES = ["چطور Nginx را ریستارت کنم؟", "آخرین خطای کانتینر X چیست؟", "چرا آخرین بیلد شکست خورد؟"];
 
 export function ChatView({ conversationId, mode = "support" }: { conversationId: string | null; mode?: "support" | "teach" }) {
+  const t = useT();
   const qc = useQueryClient();
   const status = useSystemStatus();
   const mcpCommands = useQuery({ queryKey: ["mcp-commands"], queryFn: () => api.get<McpCommand[]>("/chat/mcp/commands"), staleTime: 60_000 });
@@ -91,7 +93,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
   const [uploading, setUploading] = useState(false);
   const addFiles = (files: File[]) => {
     const ok = files.filter((f) => f.size <= MAX_IMAGE_BYTES).slice(0, Math.max(MAX_IMAGES - attachments.length, 0));
-    if (ok.length < files.length) setError(new Error(`حداکثر ${MAX_IMAGES} تصویر و هر کدام تا ${MAX_IMAGE_BYTES / 1024 / 1024} مگابایت مجاز است.`));
+    if (ok.length < files.length) setError(new Error(t("حداکثر {n} تصویر و هر کدام تا {mb} مگابایت مجاز است.").replace("{n}", String(MAX_IMAGES)).replace("{mb}", String(MAX_IMAGE_BYTES / 1024 / 1024))));
     if (ok.length) setAttachments([...attachments, ...ok.map((file) => ({ file, url: URL.createObjectURL(file), name: file.name || "screenshot" }))]);
   };
   const removeAttachment = (i: number) => {
@@ -226,16 +228,16 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
         <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
           {empty ? (
             <div className="space-y-4 pt-16 text-center">
-              <h2 className="text-2xl font-bold">{teach ? "به دستیار چیزی یاد بدهید" : "چه مشکلی دارید؟"}</h2>
+              <h2 className="text-2xl font-bold">{t(teach ? "به دستیار چیزی یاد بدهید" : "چه مشکلی دارید؟")}</h2>
               <p className="text-sm text-muted-foreground">
-                {teach
+                {t(teach
                   ? "یک روش، قانون یا نکته‌ی مربوط به زیرساخت تیم را توضیح دهید. دستیار برداشت خود را بازگو می‌کند و سؤال می‌پرسد؛ سپس آن را برای تأیید ادمین بفرستید."
-                  : "سؤال خود را بپرسید یا خطای build، deployment یا کانتینر را مستقیماً اینجا بچسبانید. ابتدا مستندات تأییدشده‌ی تیم بررسی می‌شود."}
+                  : "سؤال خود را بپرسید یا خطای build، deployment یا کانتینر را مستقیماً اینجا بچسبانید. ابتدا مستندات تأییدشده‌ی تیم بررسی می‌شود.")}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
                 {(teach ? [] : EXAMPLES).map((ex) => (
                   <button key={ex} type="button" onClick={() => setDraft(ex)} className="rounded-full border border-border bg-card px-3 py-1.5 text-sm hover:bg-muted">
-                    {ex}
+                    {t(ex)}
                   </button>
                 ))}
               </div>
@@ -252,24 +254,24 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
               <MessageBubble message={m} conversationId={conversationId} />
               {m.id === lastAssistantId && m.meta.awaiting_feedback && !live ? (
                 <div className="flex flex-wrap items-center gap-2 ps-11">
-                  <span className="text-sm text-muted-foreground">آیا این راه‌حل مشکل را حل کرد؟</span>
+                  <span className="text-sm text-muted-foreground">{t("آیا این راه‌حل مشکل را حل کرد؟")}</span>
                   <Button variant="success" size="sm" disabled={feedback.isPending} onClick={() => feedback.mutate({ messageId: m.id, outcome: "confirmed" })}>
-                    <CheckCircle2 className="h-4 w-4" /> مشکل حل شد (تأیید)
+                    <CheckCircle2 className="h-4 w-4" /> {t("مشکل حل شد (تأیید)")}
                   </Button>
                   <Button variant="dangerOutline" size="sm" disabled={feedback.isPending} onClick={() => feedback.mutate({ messageId: m.id, outcome: "rejected" })}>
-                    <XCircle className="h-4 w-4" /> با خطا مواجه شدم (رد)
+                    <XCircle className="h-4 w-4" /> {t("با خطا مواجه شدم (رد)")}
                   </Button>
                 </div>
               ) : null}
               {m.id === lastAssistantId && !live && !m.meta.kind && lastUserContent && conversationId ? (
                 <div className="ps-11">
-                  <Button variant="ghost" size="sm" onClick={() => void send(conversationId, lastUserContent, true)} title="کش را نادیده می‌گیرد و دوباره در وب جستجو می‌کند">
-                    <RefreshCw className="h-3.5 w-3.5" /> جستجوی دوباره
+                  <Button variant="ghost" size="sm" onClick={() => void send(conversationId, lastUserContent, true)} title={t("کش را نادیده می‌گیرد و دوباره در وب جستجو می‌کند")}>
+                    <RefreshCw className="h-3.5 w-3.5" /> {t("جستجوی دوباره")}
                   </Button>
                 </div>
               ) : null}
-              {m.meta.feedback === "confirmed" ? <p className="ps-11 text-xs text-success">✓ شما این راه‌حل را تأیید کردید.</p> : null}
-              {m.meta.feedback === "rejected" ? <p className="ps-11 text-xs text-danger">✗ شما این راه‌حل را رد کردید.</p> : null}
+              {m.meta.feedback === "confirmed" ? <p className="ps-11 text-xs text-success">{t("✓ شما این راه‌حل را تأیید کردید.")}</p> : null}
+              {m.meta.feedback === "rejected" ? <p className="ps-11 text-xs text-danger">{t("✗ شما این راه‌حل را رد کردید.")}</p> : null}
             </div>
           ))}
 
@@ -281,7 +283,7 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
                 <MessageBubble message={{ role: "assistant", content: live.text, citations: [], meta: {} }} streaming />
               ) : live.thinking ? null : (
                 <div className="flex items-center gap-2 ps-11 text-sm text-muted-foreground" role="status">
-                  <Spinner /> {live.step ? (STEP_LABEL[live.step] ?? "در حال پردازش…") : "در حال پردازش…"}
+                  <Spinner /> {live.step ? t(STEP_LABEL[live.step] ?? "در حال پردازش…") : t("در حال پردازش…")}
                 </div>
               )}
             </>
@@ -298,25 +300,25 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
           {teach ? (
             <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm">
               <div className="flex items-center gap-2 font-medium">
-                <GraduationCap className="h-4 w-4 text-primary" /> حالت آموزش
+                <GraduationCap className="h-4 w-4 text-primary" /> {t("حالت آموزش")}
               </div>
               <p className="text-muted-foreground">
-                هر چه یاد می‌دهید تا زمانی که ادمین آن را تأیید نکند فعال نمی‌شود. وقتی از برداشت دستیار راضی بودید، آن را ارسال کنید.
+                {t("هر چه یاد می‌دهید تا زمانی که ادمین آن را تأیید نکند فعال نمی‌شود. وقتی از برداشت دستیار راضی بودید، آن را ارسال کنید.")}
               </p>
               {submitted ? (
                 <p className="text-success" role="status">
-                  «{submitted}» برای تأیید ادمین ارسال شد. می‌توانید در همین گفتگو مورد بعدی را آموزش دهید.
+                  {t("«{title}» برای تأیید ادمین ارسال شد. می‌توانید در همین گفتگو مورد بعدی را آموزش دهید.").replace("{title}", submitted)}
                 </p>
               ) : null}
               <ErrorBanner error={submitLesson.error} />
               <Button size="sm" disabled={!conversationId || !messages.some((m) => m.role === "user") || !!live || submitLesson.isPending} onClick={() => { setSubmitted(null); submitLesson.mutate(); }}>
-                {submitLesson.isPending ? <Spinner /> : <Send className="h-4 w-4 rtl:-scale-x-100" />} ارسال برای تأیید ادمین
+                {submitLesson.isPending ? <Spinner /> : <Send className="h-4 w-4 rtl:-scale-x-100" />} {t("ارسال برای تأیید ادمین")}
               </Button>
             </div>
           ) : null}
           {phase === "awaiting_error" && !live ? (
             <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-warning" role="status">
-              لطفاً خطا یا خروجی جدید را در کادر زیر بچسبانید؛ جستجوی بعدی با اطلاعات تازه و بدون تکرار پیشنهادهای ناموفق انجام می‌شود.
+              {t("لطفاً خطا یا خروجی جدید را در کادر زیر بچسبانید؛ جستجوی بعدی با اطلاعات تازه و بدون تکرار پیشنهادهای ناموفق انجام می‌شود.")}
             </p>
           ) : null}
           <Composer
@@ -329,11 +331,11 @@ export function ChatView({ conversationId, mode = "support" }: { conversationId:
             onAddFiles={teach ? undefined : addFiles}
             onRemoveAttachment={removeAttachment}
             trailing={<ContextUsage messages={messages} contextWindow={status.data?.context_window} />}
-            lockedReason={status.data?.indexing ? "مستندات در حال ایندکس شدن است؛ چت پس از پایان ایندکس فعال می‌شود…" : undefined}
-            placeholder={teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)"}
+            lockedReason={status.data?.indexing ? t("مستندات در حال ایندکس شدن است؛ چت پس از پایان ایندکس فعال می‌شود…") : undefined}
+            placeholder={t(teach ? "آنچه دستیار باید یاد بگیرد را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)" : phase === "awaiting_error" ? "خطای جدید یا خروجی دستور را بچسبانید…" : "سؤال یا خطا را بنویسید…  (Enter ارسال · Shift+Enter خط جدید)")}
           />
           <p className="text-center text-[11px] text-muted-foreground">
-            اسرار و توکن‌ها پیش از ذخیره و ارسال به مدل به‌صورت خودکار حذف می‌شوند. دستیار در گفتگوی عادی فقط‌خواندنی است؛ عملیات تغییر وضعیت (مثل ری‌استارت کانتینر) فقط با دستور صریح و طبق دسترسی شما اجرا می‌شود.
+            {t("اسرار و توکن‌ها پیش از ذخیره و ارسال به مدل به‌صورت خودکار حذف می‌شوند. دستیار در گفتگوی عادی فقط‌خواندنی است؛ عملیات تغییر وضعیت (مثل ری‌استارت کانتینر) فقط با دستور صریح و طبق دسترسی شما اجرا می‌شود.")}
           </p>
         </div>
       </div>

@@ -13,6 +13,7 @@ import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import type { SkillRow } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 interface Draft {
   id?: string;
@@ -30,6 +31,7 @@ const TEMPLATE: Draft = {
 };
 
 export default function SkillsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [toDelete, setToDelete] = useState<SkillRow | null>(null);
@@ -62,19 +64,19 @@ export default function SkillsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="me-auto text-lg font-bold">مهارت‌ها (Skills)</h1>
-        <Button onClick={() => setDraft(TEMPLATE)}>
-          <Plus className="h-4 w-4" /> مهارت جدید
+        <h1 className="me-auto text-lg font-bold">{t("مهارت‌ها (Skills)")}</h1>
+        <Button onClick={() => setDraft({ ...TEMPLATE, description: t(TEMPLATE.description), instructions: t(TEMPLATE.instructions) })}>
+          <Plus className="h-4 w-4" /> {t("مهارت جدید")}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        هر مهارت یک راهنمای نوشته‌ی ادمین است. دستیار با مقایسه‌ی «توضیح» مهارت با سؤال کاربر، مهارت‌های مرتبط را خودکار در پاسخ‌دهی به کار می‌گیرد.
-        توضیح را مثل «چه زمانی استفاده شود» بنویسید؛ دستورالعمل می‌تواند به ابزارهای MCP فعال اشاره کند.
+        {t("هر مهارت یک راهنمای نوشته‌ی ادمین است. دستیار با مقایسه‌ی «توضیح» مهارت با سؤال کاربر، مهارت‌های مرتبط را خودکار در پاسخ‌دهی به کار می‌گیرد.")}
+        {t("توضیح را مثل «چه زمانی استفاده شود» بنویسید؛ دستورالعمل می‌تواند به ابزارهای MCP فعال اشاره کند.")}
       </p>
 
       <ErrorBanner error={skills.error ?? toggle.error ?? remove.error} />
       {skills.isLoading ? <Spinner className="mx-auto" /> : null}
-      {skills.data?.length === 0 ? <Empty>هنوز مهارتی تعریف نشده است.</Empty> : null}
+      {skills.data?.length === 0 ? <Empty>{t("هنوز مهارتی تعریف نشده است.")}</Empty> : null}
 
       {skills.data?.map((s) => (
         <Card key={s.id} className="flex flex-wrap items-start gap-3 p-4">
@@ -84,24 +86,24 @@ export default function SkillsPage() {
               <span className="font-semibold" dir="auto">
                 {s.name}
               </span>
-              {!s.enabled ? <Badge tone="neutral">غیرفعال</Badge> : null}
+              {!s.enabled ? <Badge tone="neutral">{t("غیرفعال")}</Badge> : null}
             </div>
             <p className="text-sm text-muted-foreground" dir="auto">
               {s.description}
             </p>
           </div>
-          <Switch checked={s.enabled} label={`فعال بودن ${s.name}`} disabled={toggle.isPending} onChange={() => toggle.mutate(s)} />
-          <Button size="icon" variant="ghost" aria-label="ویرایش" onClick={() => setDraft({ id: s.id, name: s.name, description: s.description, instructions: s.instructions, enabled: s.enabled })}>
+          <Switch checked={s.enabled} label={`${t("فعال بودن")} ${s.name}`} disabled={toggle.isPending} onChange={() => toggle.mutate(s)} />
+          <Button size="icon" variant="ghost" aria-label={t("ویرایش")} onClick={() => setDraft({ id: s.id, name: s.name, description: s.description, instructions: s.instructions, enabled: s.enabled })}>
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button size="icon" variant="ghost" aria-label="حذف" onClick={() => setToDelete(s)}>
+          <Button size="icon" variant="ghost" aria-label={t("حذف")} onClick={() => setToDelete(s)}>
             <Trash2 className="h-4 w-4 text-danger" />
           </Button>
         </Card>
       ))}
 
       <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
-        <DialogContent title={draft?.id ? "ویرایش مهارت" : "مهارت جدید"} description="پس از ذخیره، مهارت برای تطبیق خودکار با سؤال‌ها ایندکس می‌شود.">
+        <DialogContent title={draft?.id ? t("ویرایش مهارت") : t("مهارت جدید")} description={t("پس از ذخیره، مهارت برای تطبیق خودکار با سؤال‌ها ایندکس می‌شود.")}>
           {draft ? (
             <form
               className="space-y-3"
@@ -111,28 +113,28 @@ export default function SkillsPage() {
               }}
             >
               <label className="block space-y-1 text-sm">
-                <span>نام</span>
+                <span>{t("نام")}</span>
                 <Input required minLength={2} dir="auto" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </label>
               <label className="block space-y-1 text-sm">
-                <span>توضیح (چه زمانی استفاده شود؟)</span>
+                <span>{t("توضیح (چه زمانی استفاده شود؟)")}</span>
                 <Textarea required minLength={10} rows={2} dir="auto" value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
               </label>
               <label className="block space-y-1 text-sm">
-                <span>دستورالعمل (Markdown)</span>
+                <span>{t("دستورالعمل (Markdown)")}</span>
                 <Textarea required minLength={10} rows={10} dir="auto" value={draft.instructions} onChange={(e) => setDraft({ ...draft, instructions: e.target.value })} />
               </label>
               <label className="flex items-center gap-2 text-sm">
-                <Switch checked={draft.enabled} label="فعال" onChange={(v) => setDraft({ ...draft, enabled: v })} /> فعال
+                <Switch checked={draft.enabled} label={t("فعال")} onChange={(v) => setDraft({ ...draft, enabled: v })} /> {t("فعال")}
               </label>
               <ErrorBanner error={save.error} />
               <div className="flex gap-2">
                 <Button type="submit" disabled={save.isPending}>
-                  {save.isPending ? <Spinner /> : null} ذخیره
+                  {save.isPending ? <Spinner /> : null} {t("ذخیره")}
                 </Button>
                 <DialogClose asChild>
                   <Button type="button" variant="outline">
-                    انصراف
+                    {t("انصراف")}
                   </Button>
                 </DialogClose>
               </div>
@@ -142,16 +144,16 @@ export default function SkillsPage() {
       </Dialog>
 
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <DialogContent title="حذف مهارت" description="این مهارت دیگر در پاسخ‌ها استفاده نمی‌شود.">
+        <DialogContent title={t("حذف مهارت")} description={t("این مهارت دیگر در پاسخ‌ها استفاده نمی‌شود.")}>
           <p className="mb-4 text-sm" dir="auto">
             {toDelete?.name}
           </p>
           <div className="flex gap-2">
             <Button variant="danger" disabled={remove.isPending} onClick={() => toDelete && remove.mutate(toDelete.id)}>
-              {remove.isPending ? <Spinner /> : null} حذف
+              {remove.isPending ? <Spinner /> : null} {t("حذف")}
             </Button>
             <DialogClose asChild>
-              <Button variant="outline">انصراف</Button>
+              <Button variant="outline">{t("انصراف")}</Button>
             </DialogClose>
           </div>
         </DialogContent>

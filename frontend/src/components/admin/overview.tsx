@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import type { AdminOverview } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 import { cn, formatNumber } from "@/lib/utils";
 
 /** Counts for the sidebar badges and the dashboard cards (shared cache, refreshed every 15 s). */
@@ -38,45 +39,46 @@ function StatCard({ href, icon, label, value, hint, tone }: { href: string; icon
 
 /** Top of the dashboard: the state of every area at a glance; each card opens its page. */
 export function OverviewCards() {
+  const t = useT();
   const { data: o, isLoading } = useAdminOverview();
   if (isLoading || !o) return <Spinner className="mx-auto h-5 w-5" />;
   const icon = "h-4 w-4";
   return (
-    <section aria-label="نمای کلی" className="space-y-3">
-      <h1 className="text-lg font-bold">داشبورد مدیریت</h1>
+    <section aria-label={t("نمای کلی")} className="space-y-3">
+      <h1 className="text-lg font-bold">{t("داشبورد مدیریت")}</h1>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           href="/admin/documents"
           icon={<FileText className={icon} />}
-          label="چانک‌های مستندات"
+          label={t("چانک‌های مستندات")}
           value={formatNumber(o.documents.chunks)}
-          hint={`${formatNumber(o.documents.count)} سند${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} با خطا` : ""}`}
+          hint={`${formatNumber(o.documents.count)} ${t("سند")}${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} ${t("با خطا")}` : ""}`}
           tone={o.documents.errors ? "danger" : undefined}
         />
-        <StatCard href="/admin/skills" icon={<Sparkles className={icon} />} label="مهارت‌های فعال" value={formatNumber(o.skills.enabled)} hint={`از ${formatNumber(o.skills.total)} مهارت`} />
+        <StatCard href="/admin/skills" icon={<Sparkles className={icon} />} label={t("مهارت‌های فعال")} value={formatNumber(o.skills.enabled)} hint={t("از {n} مهارت").replace("{n}", formatNumber(o.skills.total))} />
         <StatCard
           href="/admin/mcp"
           icon={<Plug className={icon} />}
-          label="ابزارهای MCP فعال"
+          label={t("ابزارهای MCP فعال")}
           value={formatNumber(o.mcp.tools_enabled)}
-          hint={`${formatNumber(o.mcp.enabled)} سرور فعال از ${formatNumber(o.mcp.servers)}`}
+          hint={t("{a} سرور فعال از {b}").replace("{a}", formatNumber(o.mcp.enabled)).replace("{b}", formatNumber(o.mcp.servers))}
         />
         <StatCard
           href="/admin/lessons"
           icon={<GraduationCap className={icon} />}
-          label="آموزش‌های در انتظار تأیید"
+          label={t("آموزش‌های در انتظار تأیید")}
           value={formatNumber(o.lessons_pending)}
           tone={o.lessons_pending ? "warning" : undefined}
         />
         <StatCard
           href="/admin/conversations"
           icon={<MessagesSquare className={icon} />}
-          label="گفتگوهای منتظر بازبینی"
+          label={t("گفتگوهای منتظر بازبینی")}
           value={formatNumber(o.conversations.pending_review)}
-          hint={`${formatNumber(o.conversations.total)} گفتگو در کل`}
+          hint={`${formatNumber(o.conversations.total)} ${t("گفتگو در کل")}`}
           tone={o.conversations.pending_review ? "warning" : undefined}
         />
-        <StatCard href="/admin/users" icon={<Users className={icon} />} label="کاربران" value={formatNumber(o.users)} />
+        <StatCard href="/admin/users" icon={<Users className={icon} />} label={t("کاربران")} value={formatNumber(o.users)} />
       </div>
     </section>
   );

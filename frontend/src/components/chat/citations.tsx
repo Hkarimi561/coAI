@@ -3,22 +3,25 @@
 import { Download, ExternalLink, FileText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useT } from "@/lib/i18n";
 import { CITATION_LABEL } from "@/lib/labels";
 import type { Citation } from "@/lib/types";
+import { formatNumber } from "@/lib/utils";
 
 const TONE = { doc: "info", lesson: "success", solution: "success", github: "info", web: "warning", docker: "neutral", ci: "neutral" } as const;
 
 export function CitationList({ citations }: { citations: Citation[] }) {
+  const t = useT();
   if (!citations.length) return null;
   const cited = citations.filter((c) => c.cited);
   const rest = citations.filter((c) => !c.cited);
   return (
     <div className="mt-3 space-y-2 border-t border-border pt-3">
-      <h4 className="text-xs font-semibold text-muted-foreground">منابع</h4>
+      <h4 className="text-xs font-semibold text-muted-foreground">{t("منابع")}</h4>
       <ul className="space-y-1.5">{(cited.length ? cited : citations).map((c) => <CitationRow key={c.n} c={c} />)}</ul>
       {cited.length && rest.length ? (
         <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground">منابع بررسی‌شده‌ی دیگر ({rest.length.toLocaleString("fa-IR")})</summary>
+          <summary className="cursor-pointer text-muted-foreground">{t("منابع بررسی‌شده‌ی دیگر")} ({formatNumber(rest.length)})</summary>
           <ul className="mt-1.5 space-y-1.5">{rest.map((c) => <CitationRow key={c.n} c={c} />)}</ul>
         </details>
       ) : null}
@@ -31,14 +34,15 @@ function downloadUrl(path: string): string {
 }
 
 function CitationRow({ c }: { c: Citation }) {
+  const t = useT();
   return (
     <li className="text-sm">
       <details className="group rounded-md border border-border bg-muted/40 px-2.5 py-1.5">
         <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
           <span className="ltr rounded bg-primary/10 px-1.5 text-xs font-semibold text-primary">[{c.n}]</span>
           <Badge tone={TONE[c.kind]}>
-            {CITATION_LABEL[c.kind]}
-            {c.kind === "web" && c.origin ? ` · ${c.origin === "cache" ? "کش" : "جدید"}` : ""}
+            {t(CITATION_LABEL[c.kind])}
+            {c.kind === "web" && c.origin ? ` · ${t(c.origin === "cache" ? "کش" : "جدید")}` : ""}
           </Badge>
           <span className="font-medium" dir="auto">
             {c.title}
@@ -54,9 +58,9 @@ function CitationRow({ c }: { c: Citation }) {
               download
               onClick={(e) => e.stopPropagation()}
               className="ms-auto inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-primary hover:bg-muted"
-              title="دانلود فایل کامل Markdown"
+              title={t("دانلود فایل کامل Markdown")}
             >
-              <Download className="h-3 w-3" /> دانلود .md
+              <Download className="h-3 w-3" /> {t("دانلود .md")}
             </a>
           ) : null}
         </summary>

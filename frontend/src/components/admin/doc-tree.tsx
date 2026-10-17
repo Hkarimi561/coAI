@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/misc";
 import type { DocumentRow } from "@/lib/types";
 import { formatDateTime, formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 interface FolderNode {
   name: string;
@@ -86,6 +87,7 @@ interface NodeProps extends Pick<Props, "onEdit" | "onDelete" | "onReindex" | "r
 }
 
 function Folder_({ node, depth, expanded, toggle, onEdit, onDelete, onReindex, reindexingId, currentPath }: NodeProps) {
+  const t = useT();
   const isRoot = depth === 0;
   const isOpen = isRoot || expanded.has(node.path);
   const errors = countErrors(node);
@@ -105,7 +107,7 @@ function Folder_({ node, depth, expanded, toggle, onEdit, onDelete, onReindex, r
           <span className="ltr font-medium">{node.name}</span>
           <span className="text-xs text-muted-foreground">({formatNumber(countFiles(node))})</span>
           {hasCurrent ? <Spinner /> : null}
-          {errors > 0 ? <Badge tone="danger">{formatNumber(errors)} خطا</Badge> : null}
+          {errors > 0 ? <Badge tone="danger">{formatNumber(errors)} {t("خطا")}</Badge> : null}
         </button>
       ) : null}
       {isOpen ? (
@@ -123,6 +125,7 @@ function Folder_({ node, depth, expanded, toggle, onEdit, onDelete, onReindex, r
 }
 
 function FileRow({ d, depth, onEdit, onDelete, onReindex, busy, current }: { d: DocumentRow; depth: number; busy: boolean; current: boolean } & Pick<Props, "onEdit" | "onDelete" | "onReindex">) {
+  const t = useT();
   const name = d.path.split("/").pop() ?? d.path;
   return (
     <div
@@ -140,14 +143,14 @@ function FileRow({ d, depth, onEdit, onDelete, onReindex, busy, current }: { d: 
       <span className="text-xs text-muted-foreground">{formatNumber(d.chunk_count)} chunk</span>
       {current ? (
         <Badge tone="info">
-          <Spinner /> در حال ایندکس
+          <Spinner /> {t("در حال ایندکس")}
         </Badge>
       ) : d.status === "indexed" ? (
-        <Badge tone="success">ایندکس</Badge>
+        <Badge tone="success">{t("ایندکس")}</Badge>
       ) : (
         <span className="group/err relative">
           <span tabIndex={0} className="cursor-help outline-none">
-            <Badge tone="danger">خطا در ایندکس</Badge>
+            <Badge tone="danger">{t("خطا در ایندکس")}</Badge>
           </span>
           <span
             role="tooltip"
@@ -159,13 +162,13 @@ function FileRow({ d, depth, onEdit, onDelete, onReindex, busy, current }: { d: 
       )}
       <span className="hidden text-xs text-muted-foreground md:inline">{formatDateTime(d.indexed_at)}</span>
       <div className="flex gap-1">
-        <Button size="icon" variant="ghost" aria-label="ایندکس مجدد" title="ایندکس مجدد این سند" disabled={busy} onClick={() => onReindex(d)}>
+        <Button size="icon" variant="ghost" aria-label={t("ایندکس مجدد")} title={t("ایندکس مجدد این سند")} disabled={busy} onClick={() => onReindex(d)}>
           {busy ? <Spinner /> : <RefreshCw className="h-4 w-4" />}
         </Button>
-        <Button size="icon" variant="ghost" aria-label="ویرایش" onClick={() => onEdit(d)}>
+        <Button size="icon" variant="ghost" aria-label={t("ویرایش")} onClick={() => onEdit(d)}>
           <Pencil className="h-4 w-4" />
         </Button>
-        <Button size="icon" variant="ghost" aria-label="حذف" onClick={() => onDelete(d)}>
+        <Button size="icon" variant="ghost" aria-label={t("حذف")} onClick={() => onDelete(d)}>
           <Trash2 className="h-4 w-4 text-danger" />
         </Button>
       </div>

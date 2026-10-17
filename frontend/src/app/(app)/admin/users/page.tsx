@@ -15,8 +15,10 @@ import { api } from "@/lib/api";
 import { useMe } from "@/lib/auth";
 import type { Role, User } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export default function UsersPage() {
+  const t = useT();
   const qc = useQueryClient();
   const { data: me } = useMe();
   const users = useQuery({ queryKey: ["admin-users"], queryFn: () => api.get<User[]>("/admin/users") });
@@ -55,17 +57,17 @@ export default function UsersPage() {
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-3">
-        <h1 className="text-lg font-bold">کاربران</h1>
+        <h1 className="text-lg font-bold">{t("کاربران")}</h1>
         <ErrorBanner error={users.error ?? roles.error} />
         {users.isLoading ? <Spinner /> : null}
         <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted text-xs text-muted-foreground">
               <tr>
-                <th className="p-3 text-start">کاربر</th>
-                <th className="p-3 text-start">نقش‌ها</th>
-                <th className="p-3 text-start">وضعیت</th>
-                <th className="p-3 text-start">عضویت</th>
+                <th className="p-3 text-start">{t("کاربر")}</th>
+                <th className="p-3 text-start">{t("نقش‌ها")}</th>
+                <th className="p-3 text-start">{t("وضعیت")}</th>
+                <th className="p-3 text-start">{t("عضویت")}</th>
                 <th className="p-3" />
               </tr>
             </thead>
@@ -82,7 +84,7 @@ export default function UsersPage() {
                   </td>
                   <td className="p-3">
                     <div className="flex flex-wrap gap-1">
-                      {u.roles.length === 0 ? <span className="text-xs text-muted-foreground">بدون نقش</span> : null}
+                      {u.roles.length === 0 ? <span className="text-xs text-muted-foreground">{t("بدون نقش")}</span> : null}
                       {u.roles.map((r) => (
                         <Badge key={r.id} tone={r.name === "admin" ? "info" : "neutral"}>
                           {r.name}
@@ -90,16 +92,16 @@ export default function UsersPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="p-3">{u.is_active ? <Badge tone="success">فعال</Badge> : <Badge tone="danger">غیرفعال</Badge>}</td>
+                  <td className="p-3">{u.is_active ? <Badge tone="success">{t("فعال")}</Badge> : <Badge tone="danger">{t("غیرفعال")}</Badge>}</td>
                   <td className="p-3 text-muted-foreground">{formatDate(u.created_at)}</td>
                   <td className="p-3">
                     {u.id !== me?.id ? (
                       <div className="flex justify-end gap-1">
                         <Button size="sm" variant="outline" onClick={() => { update.reset(); setEditing({ user: u, roleIds: u.roles.map((r) => r.id) }); }}>
-                          نقش‌ها
+                          {t("نقش‌ها")}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => update.mutate({ id: u.id, patch: { is_active: !u.is_active } })}>
-                          {u.is_active ? "غیرفعال‌سازی" : "فعال‌سازی"}
+                          {u.is_active ? t("غیرفعال‌سازی") : t("فعال‌سازی")}
                         </Button>
                       </div>
                     ) : null}
@@ -114,20 +116,20 @@ export default function UsersPage() {
 
       <Card className="h-fit">
         <CardHeader>
-          <CardTitle>کاربر جدید</CardTitle>
+          <CardTitle>{t("کاربر جدید")}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-3">
-            <Input placeholder="نام" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label="نام" />
-            <Input type="email" dir="ltr" placeholder="email@company.com" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} aria-label="ایمیل" />
-            <Input type="password" dir="ltr" placeholder="رمز عبور (حداقل ۸ نویسه)" minLength={8} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} aria-label="رمز عبور" autoComplete="new-password" />
+            <Input placeholder={t("نام")} required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label={t("نام")} />
+            <Input type="email" dir="ltr" placeholder="email@company.com" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} aria-label={t("ایمیل")} />
+            <Input type="password" dir="ltr" placeholder={t("رمز عبور (حداقل ۸ نویسه)")} minLength={8} required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} aria-label={t("رمز عبور")} autoComplete="new-password" />
             <div>
-              <div className="mb-1 text-xs font-semibold text-muted-foreground">نقش‌ها</div>
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">{t("نقش‌ها")}</div>
               <RolePicker roles={roles.data ?? []} value={newRoleIds ?? defaultRoleIds} onChange={setNewRoleIds} canGrant={canGrant} />
             </div>
             <ErrorBanner error={create.error} />
             <Button type="submit" className="w-full" disabled={create.isPending}>
-              {create.isPending ? <Spinner /> : <UserPlus className="h-4 w-4" />} ایجاد کاربر
+              {create.isPending ? <Spinner /> : <UserPlus className="h-4 w-4" />} {t("ایجاد کاربر")}
             </Button>
           </form>
         </CardContent>
@@ -135,12 +137,12 @@ export default function UsersPage() {
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         {editing ? (
-          <DialogContent title={`نقش‌های ${editing.user.name}`} description="دسترسی‌های کاربر اجتماع دسترسی‌های همه‌ی نقش‌های او است." className="max-w-md">
+          <DialogContent title={t("نقش‌های {name}").replace("{name}", editing.user.name)} description={t("دسترسی‌های کاربر اجتماع دسترسی‌های همه‌ی نقش‌های او است.")} className="max-w-md">
             <div className="space-y-3">
               <RolePicker roles={roles.data ?? []} value={editing.roleIds} onChange={(roleIds) => setEditing({ ...editing, roleIds })} canGrant={canGrant} />
               <ErrorBanner error={update.error} />
               <Button className="w-full" disabled={update.isPending} onClick={() => update.mutate({ id: editing.user.id, patch: { role_ids: editing.roleIds } })}>
-                {update.isPending ? <Spinner /> : null} ذخیره
+                {update.isPending ? <Spinner /> : null} {t("ذخیره")}
               </Button>
             </div>
           </DialogContent>

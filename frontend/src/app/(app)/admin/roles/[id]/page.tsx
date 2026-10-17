@@ -15,9 +15,11 @@ import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { can, useMe } from "@/lib/auth";
 import type { ContainerGrant, ContainerPermissions, Role } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 /** One role: its name, its system permissions and its Docker container access, all on one page. `/admin/roles/new` creates a role. */
 export default function RoleEditPage({ params }: { params: { id: string } }) {
+  const t = useT();
   const isNew = params.id === "new";
   const qc = useQueryClient();
   const router = useRouter();
@@ -57,7 +59,7 @@ export default function RoleEditPage({ params }: { params: { id: string } }) {
   });
 
   if (!isNew && roles.isLoading) return <Spinner className="mx-auto mt-10 h-6 w-6" />;
-  if (!isNew && !role) return <Empty>نقش پیدا نشد.</Empty>;
+  if (!isNew && !role) return <Empty>{t("نقش پیدا نشد.")}</Empty>;
   const locked = !!role?.locked;
   const knownContainers = containers.data?.containers.map((c) => c.name).sort() ?? [];
   const allKeys = catalog.data?.map((p) => p.key) ?? [];
@@ -74,17 +76,17 @@ export default function RoleEditPage({ params }: { params: { id: string } }) {
     <form onSubmit={submit} className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <Link href="/admin/roles" className="rounded-md p-1.5 hover:bg-muted" aria-label="بازگشت به نقش‌ها">
+          <Link href="/admin/roles" className="rounded-md p-1.5 hover:bg-muted" aria-label={t("بازگشت به نقش‌ها")}>
             <ArrowRight className="h-4 w-4" />
           </Link>
-          <h1 className="text-lg font-bold">{isNew ? "نقش جدید" : `نقش «${role?.name}»`}</h1>
-          {role?.is_system ? <Badge tone="info">پیش‌فرض سیستم</Badge> : null}
-          {locked ? <Lock className="h-4 w-4 text-muted-foreground" aria-label="قفل" /> : null}
+          <h1 className="text-lg font-bold">{isNew ? t("نقش جدید") : t("نقش «{name}»").replace("{name}", role?.name ?? "")}</h1>
+          {role?.is_system ? <Badge tone="info">{t("پیش‌فرض سیستم")}</Badge> : null}
+          {locked ? <Lock className="h-4 w-4 text-muted-foreground" aria-label={t("قفل")} /> : null}
         </div>
         <div className="flex items-center gap-3">
-          {saved ? <span className="text-sm text-success" role="status">ذخیره شد ✓</span> : null}
+          {saved ? <span className="text-sm text-success" role="status">{t("ذخیره شد ✓")}</span> : null}
           <Button type="submit" disabled={save.isPending || !can(me, "roles.manage")}>
-            {save.isPending ? <Spinner /> : <Save className="h-4 w-4" />} ذخیره
+            {save.isPending ? <Spinner /> : <Save className="h-4 w-4" />} {t("ذخیره")}
           </Button>
         </div>
       </div>
@@ -92,18 +94,18 @@ export default function RoleEditPage({ params }: { params: { id: string } }) {
 
       <Card>
         <CardContent className="grid gap-3 p-4 md:grid-cols-2">
-          <Input placeholder="نام نقش" required minLength={2} maxLength={48} disabled={role?.is_system} value={name} onChange={(e) => setName(e.target.value)} aria-label="نام نقش" />
-          <Input placeholder="توضیح (اختیاری)" maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} aria-label="توضیح" />
+          <Input placeholder={t("نام نقش")} required minLength={2} maxLength={48} disabled={role?.is_system} value={name} onChange={(e) => setName(e.target.value)} aria-label={t("نام نقش")} />
+          <Input placeholder={t("توضیح (اختیاری)")} maxLength={200} value={description} onChange={(e) => setDescription(e.target.value)} aria-label={t("توضیح")} />
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>دسترسی‌های سیستم</CardTitle>
+            <CardTitle>{t("دسترسی‌های سیستم")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {locked ? <p className="text-xs text-muted-foreground">نقش ادمین همیشه همه‌ی دسترسی‌ها را دارد و قابل تغییر نیست.</p> : null}
+            {locked ? <p className="text-xs text-muted-foreground">{t("نقش ادمین همیشه همه‌ی دسترسی‌ها را دارد و قابل تغییر نیست.")}</p> : null}
             {catalog.data ? (
               <PermissionGrid catalog={catalog.data} value={locked ? allKeys : permissions} onChange={setPermissions} disabled={locked} canGrant={(key) => can(me, key)} />
             ) : (
@@ -114,17 +116,17 @@ export default function RoleEditPage({ params }: { params: { id: string } }) {
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle>دسترسی کانتینرهای Docker</CardTitle>
+            <CardTitle>{t("دسترسی کانتینرهای Docker")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {holdsAll ? (
-              <p className="rounded-md bg-primary/10 p-2 text-xs text-primary">این نقش دسترسی «لاگ و عملیات روی همه‌ی کانتینرها» را دارد؛ تنظیم جداگانه لازم نیست.</p>
+              <p className="rounded-md bg-primary/10 p-2 text-xs text-primary">{t("این نقش دسترسی «لاگ و عملیات روی همه‌ی کانتینرها» را دارد؛ تنظیم جداگانه لازم نیست.")}</p>
             ) : holdsLogs ? (
-              <p className="rounded-md bg-primary/10 p-2 text-xs text-primary">این نقش لاگ همه‌ی کانتینرها را می‌بیند؛ اینجا فقط می‌توانید عملیات (start / stop / restart) را برای کانتینرهای مشخص اضافه کنید.</p>
+              <p className="rounded-md bg-primary/10 p-2 text-xs text-primary">{t("این نقش لاگ همه‌ی کانتینرها را می‌بیند؛ اینجا فقط می‌توانید عملیات (start / stop / restart) را برای کانتینرهای مشخص اضافه کنید.")}</p>
             ) : null}
-            {!canContainers ? <p className="text-xs text-muted-foreground">برای تغییر دسترسی کانتینرها به مجوز «تعیین دسترسی کانتینرها» نیاز دارید.</p> : null}
+            {!canContainers ? <p className="text-xs text-muted-foreground">{t("برای تغییر دسترسی کانتینرها به مجوز «تعیین دسترسی کانتینرها» نیاز دارید.")}</p> : null}
             {containers.data && !containers.data.enabled ? (
-              <p className="text-xs text-muted-foreground">بازرسی Docker فعال نیست (DOCKER_ALLOWED_CONTAINERS)؛ فقط می‌توانید الگو وارد کنید.</p>
+              <p className="text-xs text-muted-foreground">{t("بازرسی Docker فعال نیست (DOCKER_ALLOWED_CONTAINERS)؛ فقط می‌توانید الگو وارد کنید.")}</p>
             ) : null}
             {containers.isLoading ? <Spinner /> : null}
             <ContainerGrantEditor known={knownContainers} value={locked ? [] : grants} onChange={setGrants} disabled={locked || !canContainers || holdsAll} />

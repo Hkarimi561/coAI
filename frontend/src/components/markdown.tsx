@@ -8,7 +8,10 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 
+import { useT } from "@/lib/i18n";
+
 function CodeBlock(props: ComponentPropsWithoutRef<"pre">) {
+  const t = useT();
   const ref = useRef<HTMLPreElement>(null);
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -26,7 +29,7 @@ function CodeBlock(props: ComponentPropsWithoutRef<"pre">) {
       <button
         type="button"
         onClick={copy}
-        aria-label="کپی کد"
+        aria-label={t("کپی کد")}
         className="absolute right-2 top-2 rounded bg-white/10 p-1.5 text-white opacity-0 transition-opacity hover:bg-white/20 focus-visible:opacity-100 group-hover:opacity-100"
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

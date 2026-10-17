@@ -1,4 +1,5 @@
 import { ApiError } from "@/lib/api";
+import { tNow } from "@/lib/i18n";
 import type { Message } from "@/lib/types";
 
 export interface StreamHandlers {
@@ -78,7 +79,7 @@ async function consume(res: Response, h: StreamHandlers): Promise<void> {
         h.onDone?.(payload as unknown as Message);
         break;
       case "error":
-        throw new Error(String(payload.message ?? "خطای ناشناخته"));
+        throw new Error(String(payload.message ?? tNow("خطای ناشناخته")));
     }
   };
 
@@ -93,5 +94,5 @@ async function consume(res: Response, h: StreamHandlers): Promise<void> {
       dispatch(raw);
     }
   }
-  if (!finished) throw new Error("ارتباط با سرور قطع شد؛ صفحه را تازه‌سازی کنید (پاسخ در صورت تکمیل ذخیره می‌شود).");
+  if (!finished) throw new Error(tNow("ارتباط با سرور قطع شد؛ صفحه را تازه‌سازی کنید (پاسخ در صورت تکمیل ذخیره می‌شود)."));
 }

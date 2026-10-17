@@ -11,6 +11,7 @@ import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import type { DocumentRow } from "@/lib/types";
+import { useT } from "@/lib/i18n";
 
 export interface EditorTarget {
   /** existing document id (edit) — absent for new / promoted documents */
@@ -28,6 +29,7 @@ function stripFrontMatter(md: string): string {
 
 /** Edit / preview / approve-and-publish a Markdown document. Publishing writes it to the docs store and indexes it in Qdrant. */
 export function DocumentEditor({ target, onDone, onCancel }: { target: EditorTarget; onDone: (doc: DocumentRow) => void; onCancel: () => void }) {
+  const t = useT();
   const [path, setPath] = useState(target.path);
   const [content, setContent] = useState(target.content);
   const editing = !!target.docId;
@@ -49,14 +51,14 @@ export function DocumentEditor({ target, onDone, onCancel }: { target: EditorTar
     <div className="space-y-3 rounded-lg border border-primary/30 bg-card p-4">
       {target.note ? <p className="rounded-md bg-primary/5 p-2 text-sm">{target.note}</p> : null}
       <label className="block space-y-1 text-sm">
-        <span className="font-medium">مسیر فایل در مخزن مستندات</span>
+        <span className="font-medium">{t("مسیر فایل در مخزن مستندات")}</span>
         <Input dir="ltr" value={path} onChange={(e) => setPath(e.target.value)} disabled={editing} placeholder="promoted/restart-nginx.md" />
       </label>
 
       <Tabs defaultValue="edit">
         <TabsList>
-          <TabsTrigger value="edit">ویرایش</TabsTrigger>
-          <TabsTrigger value="preview">پیش‌نمایش</TabsTrigger>
+          <TabsTrigger value="edit">{t("ویرایش")}</TabsTrigger>
+          <TabsTrigger value="preview">{t("پیش‌نمایش")}</TabsTrigger>
         </TabsList>
         <TabsContent value="edit">
           <Textarea
@@ -65,7 +67,7 @@ export function DocumentEditor({ target, onDone, onCancel }: { target: EditorTar
             dir="auto"
             rows={24}
             spellCheck={false}
-            aria-label="محتوای Markdown"
+            aria-label={t("محتوای Markdown")}
             className="font-mono text-[0.85rem]"
           />
         </TabsContent>
@@ -79,10 +81,10 @@ export function DocumentEditor({ target, onDone, onCancel }: { target: EditorTar
       <ErrorBanner error={publish.error} />
       <div className="flex gap-2">
         <Button onClick={() => publish.mutate()} disabled={publish.isPending || !content.trim() || !path.trim()}>
-          {publish.isPending ? <Spinner /> : <Save className="h-4 w-4" />} {editing ? "ذخیره و ایندکس مجدد" : "تأیید و انتشار در پایگاه دانش"}
+          {publish.isPending ? <Spinner /> : <Save className="h-4 w-4" />} {editing ? t("ذخیره و ایندکس مجدد") : t("تأیید و انتشار در پایگاه دانش")}
         </Button>
         <Button variant="outline" onClick={onCancel} disabled={publish.isPending}>
-          انصراف
+          {t("انصراف")}
         </Button>
       </div>
     </div>

@@ -1,10 +1,14 @@
+"use client";
+
 import { AlertTriangle, Loader2 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
+import { cn, formatNumber } from "@/lib/utils";
 
 export function Spinner({ className }: { className?: string }) {
-  return <Loader2 className={cn("h-4 w-4 animate-spin", className)} aria-label="در حال بارگذاری" />;
+  const t = useT();
+  return <Loader2 className={cn("h-4 w-4 animate-spin", className)} aria-label={t("در حال بارگذاری")} />;
 }
 
 export function ErrorBanner({ error }: { error: unknown }) {
@@ -25,18 +29,19 @@ export function Empty({ children }: { children: ReactNode }) {
 }
 
 export function Pager({ page, pageSize, total, onPage }: { page: number; pageSize: number; total: number; onPage: (p: number) => void }) {
+  const t = useT();
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="flex items-center justify-between pt-3 text-sm text-muted-foreground">
       <span>
-        صفحه {page.toLocaleString("fa-IR")} از {pages.toLocaleString("fa-IR")} — {total.toLocaleString("fa-IR")} مورد
+        {t("صفحه {p} از {n} — {total} مورد").replace("{p}", formatNumber(page)).replace("{n}", formatNumber(pages)).replace("{total}", formatNumber(total))}
       </span>
       <div className="flex gap-2">
         <button className="rounded-md border border-border px-3 py-1 disabled:opacity-40" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-          قبلی
+          {t("قبلی")}
         </button>
         <button className="rounded-md border border-border px-3 py-1 disabled:opacity-40" disabled={page >= pages} onClick={() => onPage(page + 1)}>
-          بعدی
+          {t("بعدی")}
         </button>
       </div>
     </div>

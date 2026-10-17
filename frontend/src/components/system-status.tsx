@@ -5,8 +5,9 @@ import Link from "next/link";
 
 import { api } from "@/lib/api";
 import { can, useMe } from "@/lib/auth";
+import { tNow, useT } from "@/lib/i18n";
 import type { ComponentKey, SystemStatus } from "@/lib/types";
-import { cn, formatNumber } from "@/lib/utils";
+import { cn, formatNumber, formatPercent } from "@/lib/utils";
 
 export const COMPONENT_LABEL: Record<ComponentKey, string> = {
   llm: "مدل زبانی (LLM)",
@@ -37,16 +38,17 @@ export function Dot({ ok }: { ok: boolean | null }) {
   );
 }
 
-export const stateText = (ok: boolean | null, nullText = "در حال بارگذاری / غیرفعال") => (ok === true ? "متصل" : ok === false ? "قطع" : nullText);
+export const stateText = (ok: boolean | null, nullText = "در حال بارگذاری / غیرفعال") => tNow(ok === true ? "متصل" : ok === false ? "قطع" : nullText);
 
 /** Compact header indicator: AI = LLM + embeddings. Admins can click through to the detailed page. */
 export function HeaderStatus() {
+  const t = useT();
   const { data, isError } = useSystemStatus();
   const { data: me } = useMe();
   if (isError) {
     return (
       <span className="flex items-center gap-1.5 text-xs text-danger">
-        <Dot ok={false} /> سرور در دسترس نیست
+        <Dot ok={false} /> {t("سرور در دسترس نیست")}
       </span>
     );
   }
@@ -55,15 +57,15 @@ export function HeaderStatus() {
   const content = (
     <span className="flex items-center gap-3 rounded-md border border-border px-2.5 py-1 text-xs">
       <span className="flex items-center gap-1.5" title={can(me, "system.view") ? llm.detail : undefined}>
-        <Dot ok={llm.ok} /> هوش مصنوعی: {stateText(llm.ok)}
+        <Dot ok={llm.ok} /> {t("هوش مصنوعی")}: {stateText(llm.ok)}
       </span>
       <span className="flex items-center gap-1.5" title={can(me, "system.view") ? embeddings.detail : undefined}>
-        <Dot ok={embeddings.ok} /> جستجوی معنایی: {stateText(embeddings.ok, "در حال آماده‌سازی")}
+        <Dot ok={embeddings.ok} /> {t("جستجوی معنایی")}: {stateText(embeddings.ok, "در حال آماده‌سازی")}
       </span>
     </span>
   );
   return can(me, "system.view") ? (
-    <Link href="/admin/status" aria-label="وضعیت سیستم">
+    <Link href="/admin/status" aria-label={t("وضعیت سیستم")}>
       {content}
     </Link>
   ) : (
@@ -73,6 +75,7 @@ export function HeaderStatus() {
 
 /** Warning banner shown on chat / documents pages while the assistant cannot answer. */
 export function SystemStatusBar() {
+  const t = useT();
   const { data } = useSystemStatus();
   const { data: me } = useMe();
   if (!data || data.assistant_ready) return null;
@@ -80,21 +83,21 @@ export function SystemStatusBar() {
   const problems: string[] = [];
   if (data.indexing) {
     const p = data.index_progress;
-    const counter = p?.running && p.total ? ` (${formatNumber(p.done)} از ${formatNumber(p.total)})` : "";
-    problems.push(`مستندات در حال ایندکس شدن است${counter}؛ چت تا پایان ایندکس غیرفعال است`);
+    const counter = p?.running && p.total ? ` (${formatNumber(p.done)} ${t("از")} ${formatNumber(p.total)})` : "";
+    problems.push(t("مستندات در حال ایندکس شدن است{counter}؛ چت تا پایان ایندکس غیرفعال است").replace("{counter}", counter));
   }
-  if (llm.ok !== true) problems.push("مدل زبانی در دسترس نیست");
-  if (embeddings.ok === false) problems.push("مدل Embedding بارگذاری نشده است (ایندکس و جستجوی مستندات کار نمی‌کند)");
-  if (embeddings.ok === null) problems.push("مدل Embedding هنوز در حال آماده‌سازی است");
+  if (llm.ok !== true) problems.push(t("مدل زبانی در دسترس نیست"));
+  if (embeddings.ok === false) problems.push(t("مدل Embedding بارگذاری نشده است (ایندکس و جستجوی مستندات کار نمی‌کند)"));
+  if (embeddings.ok === null) problems.push(t("مدل Embedding هنوز در حال آماده‌سازی است"));
   return (
     <div role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
       {problems.join(" · ")}.{" "}
       {can(me, "system.view") ? (
         <Link href="/admin/status" className="underline">
-          جزئیات و راه‌حل
+          {t("جزئیات و راه‌حل")}
         </Link>
       ) : (
-        "لطفاً به مدیر سیستم اطلاع دهید."
+        t("لطفاً به مدیر سیستم اطلاع دهید.")
       )}
     </div>
   );
@@ -102,6 +105,7 @@ export function SystemStatusBar() {
 
 /** Progress bar + the file currently being indexed (documents page). */
 export function IndexProgress() {
+  const t = useT();
   const { data } = useSystemStatus();
   const p = data?.index_progress;
   if (!data?.indexing) return null;
@@ -109,10 +113,10 @@ export function IndexProgress() {
   return (
     <div role="status" className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium">{p?.running ? "در حال ایندکس مستندات…" : "آماده‌سازی ایندکس…"}</span>
+        <span className="font-medium">{t(p?.running ? "در حال ایندکس مستندات…" : "آماده‌سازی ایندکس…")}</span>
         {p?.running ? (
           <span className="text-xs text-muted-foreground">
-            {formatNumber(p.done)} از {formatNumber(p.total)} ({formatNumber(pct)}٪)
+            {formatNumber(p.done)} {t("از")} {formatNumber(p.total)} ({formatPercent(pct / 100)})
           </span>
         ) : null}
       </div>

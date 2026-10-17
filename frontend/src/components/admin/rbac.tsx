@@ -9,6 +9,7 @@ import { Input, Select } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import type { ContainerGrant, ContainerLevel, PermissionInfo, Role } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export function useRoles() {
   return useQuery({ queryKey: ["admin-roles"], queryFn: () => api.get<Role[]>("/admin/roles") });
@@ -30,6 +31,7 @@ export function RolePicker({
   onChange: (ids: string[]) => void;
   canGrant?: (role: Role) => boolean;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const selected = roles.filter((r) => value.includes(r.id));
@@ -62,7 +64,7 @@ export function RolePicker({
         className="flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-start text-sm"
       >
         <span className="flex flex-wrap gap-1">
-          {selected.length === 0 ? <span className="text-muted-foreground">انتخاب نقش‌ها…</span> : null}
+          {selected.length === 0 ? <span className="text-muted-foreground">{t("انتخاب نقش‌ها…")}</span> : null}
           {selected.map((r) => (
             <span key={r.id} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary" dir="auto">
               {r.name}
@@ -81,7 +83,7 @@ export function RolePicker({
                 <button
                   type="button"
                   disabled={locked}
-                  title={locked ? "شما همه‌ی دسترسی‌های این نقش را ندارید" : undefined}
+                  title={locked ? t("شما همه‌ی دسترسی‌های این نقش را ندارید") : undefined}
                   onClick={() => onChange(checked ? value.filter((id) => id !== r.id) : [...value, r.id])}
                   className="flex w-full items-start gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -164,6 +166,7 @@ export function ContainerGrantEditor({
   onChange: (grants: ContainerGrant[]) => void;
   disabled?: boolean;
 }) {
+  const t = useT();
   const levelOf = (name: string): ContainerLevel | "" => value.find((g) => g.container === name)?.level ?? "";
   const setKnown = (name: string, level: ContainerLevel | "") =>
     onChange(level ? [...value.filter((g) => g.container !== name), { container: name, level }] : value.filter((g) => g.container !== name));
@@ -178,28 +181,28 @@ export function ContainerGrantEditor({
       {known.map((name) => (
         <div key={name} className="flex items-center justify-between gap-2">
           <code className="min-w-0 truncate text-sm" dir="ltr">{name}</code>
-          <Select value={levelOf(name)} disabled={disabled} aria-label={`دسترسی به ${name}`} className="w-40" onChange={(e) => setKnown(name, e.target.value as ContainerLevel | "")}>
-            <option value="">بدون دسترسی</option>
-            <option value="logs">فقط لاگ</option>
-            <option value="actions">لاگ و عملیات</option>
+          <Select value={levelOf(name)} disabled={disabled} aria-label={`${t("دسترسی به")} ${name}`} className="w-40" onChange={(e) => setKnown(name, e.target.value as ContainerLevel | "")}>
+            <option value="">{t("بدون دسترسی")}</option>
+            <option value="logs">{t("فقط لاگ")}</option>
+            <option value="actions">{t("لاگ و عملیات")}</option>
           </Select>
         </div>
       ))}
       {extra.map((g, i) => (
         <div key={i} className="flex items-center gap-2">
-          <Input dir="ltr" value={g.container} disabled={disabled} placeholder="الگو، مثلاً api-*" aria-label="الگوی کانتینر" onChange={(e) => setExtra(i, { container: e.target.value })} />
-          <Select value={g.level} disabled={disabled} aria-label="سطح دسترسی" className="w-40" onChange={(e) => setExtra(i, { level: e.target.value as ContainerLevel })}>
-            <option value="logs">فقط لاگ</option>
-            <option value="actions">لاگ و عملیات</option>
+          <Input dir="ltr" value={g.container} disabled={disabled} placeholder={t("الگو، مثلاً api-*")} aria-label={t("الگوی کانتینر")} onChange={(e) => setExtra(i, { container: e.target.value })} />
+          <Select value={g.level} disabled={disabled} aria-label={t("سطح دسترسی")} className="w-40" onChange={(e) => setExtra(i, { level: e.target.value as ContainerLevel })}>
+            <option value="logs">{t("فقط لاگ")}</option>
+            <option value="actions">{t("لاگ و عملیات")}</option>
           </Select>
-          <Button type="button" size="icon" variant="ghost" aria-label="حذف" disabled={disabled} onClick={() => onChange(value.filter((x) => x !== g))}>
+          <Button type="button" size="icon" variant="ghost" aria-label={t("حذف")} disabled={disabled} onClick={() => onChange(value.filter((x) => x !== g))}>
             <Trash2 className="h-4 w-4 text-danger" />
           </Button>
         </div>
       ))}
       {!disabled ? (
         <Button type="button" size="sm" variant="outline" onClick={() => onChange([...value, { container: "", level: "logs" }])}>
-          <Plus className="h-4 w-4" /> افزودن الگو / کانتینر
+          <Plus className="h-4 w-4" /> {t("افزودن الگو / کانتینر")}
         </Button>
       ) : null}
     </div>

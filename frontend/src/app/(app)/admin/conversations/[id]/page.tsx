@@ -17,9 +17,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { SOURCE_LABEL, STATUS_LABEL, STATUS_TONE, WEB_EVENT_LABEL } from "@/lib/labels";
 import type { ConversationInspection, ConversationStatus, DraftResponse } from "@/lib/types";
-import { formatDateTime } from "@/lib/utils";
+import { formatDateTime, formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export default function InspectorPage({ params }: { params: { id: string } }) {
+  const t = useT();
   const { id } = params;
   const qc = useQueryClient();
   const [editor, setEditor] = useState<EditorTarget | null>(null);
@@ -45,8 +47,8 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
         conversationId: id,
         solutionId: d.solution_id,
         note: d.generated_by_llm
-          ? "پیش‌نویس توسط مدل زبانی از روی گفتگو ساخته شد. پیش از انتشار، درستی دستورها و علت ریشه‌ای را بررسی کنید."
-          : "مدل زبانی در دسترس نبود یا خروجی معتبر نداشت؛ قالب پایه ساخته شد. بخش‌ها را تکمیل کنید.",
+          ? t("پیش‌نویس توسط مدل زبانی از روی گفتگو ساخته شد. پیش از انتشار، درستی دستورها و علت ریشه‌ای را بررسی کنید.")
+          : t("مدل زبانی در دسترس نبود یا خروجی معتبر نداشت؛ قالب پایه ساخته شد. بخش‌ها را تکمیل کنید."),
       }),
   });
 
@@ -60,32 +62,32 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
       <div className="flex flex-wrap items-center gap-3">
         <Button asChild variant="ghost" size="sm">
           <Link href="/admin/conversations">
-            <ArrowRight className="h-4 w-4" /> بازگشت
+            <ArrowRight className="h-4 w-4" /> {t("بازگشت")}
           </Link>
         </Button>
         <h1 className="me-auto text-lg font-bold" dir="auto">
-          {c.title || "(بدون عنوان)"}
+          {c.title || t("(بدون عنوان)")}
         </h1>
-        <Badge tone={STATUS_TONE[c.status]}>{STATUS_LABEL[c.status]}</Badge>
-        <Select value={c.status} onChange={(e) => setStatus.mutate(e.target.value as ConversationStatus)} className="w-44" aria-label="تغییر وضعیت">
+        <Badge tone={STATUS_TONE[c.status]}>{t(STATUS_LABEL[c.status])}</Badge>
+        <Select value={c.status} onChange={(e) => setStatus.mutate(e.target.value as ConversationStatus)} className="w-44" aria-label={t("تغییر وضعیت")}>
           {(Object.keys(STATUS_LABEL) as ConversationStatus[]).map((s) => (
             <option key={s} value={s}>
-              {STATUS_LABEL[s]}
+              {t(STATUS_LABEL[s])}
             </option>
           ))}
         </Select>
         <Button onClick={() => draft.mutate()} disabled={draft.isPending}>
-          {draft.isPending ? <Spinner /> : <FilePlus2 className="h-4 w-4" />} ارتقا به مستندات
+          {draft.isPending ? <Spinner /> : <FilePlus2 className="h-4 w-4" />} {t("ارتقا به مستندات")}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        کاربر: <span dir="ltr">{data.user.email}</span> · آخرین فعالیت: {formatDateTime(c.updated_at)}
+        {t("کاربر:")} <span dir="ltr">{data.user.email}</span> · {t("آخرین فعالیت:")} {formatDateTime(c.updated_at)}
       </p>
 
       <ErrorBanner error={setStatus.error ?? draft.error ?? reject.error} />
       {published ? (
         <div role="status" className="rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success">
-          مستند در <code className="ltr">{published}</code> منتشر و در Qdrant ایندکس شد؛ وضعیت گفتگو «حل‌شده» شد.
+          {t("مستند در")} <code className="ltr">{published}</code> {t("منتشر و در Qdrant ایندکس شد؛ وضعیت گفتگو «حل‌شده» شد.")}
         </div>
       ) : null}
       {editor ? (
@@ -102,9 +104,9 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
 
       <Tabs defaultValue="chat">
         <TabsList>
-          <TabsTrigger value="chat">گفتگو</TabsTrigger>
-          <TabsTrigger value="tools">ابزارها و جستجوها ({data.tool_calls.length.toLocaleString("fa-IR")})</TabsTrigger>
-          <TabsTrigger value="feedback">بازخورد و راه‌حل‌ها</TabsTrigger>
+          <TabsTrigger value="chat">{t("گفتگو")}</TabsTrigger>
+          <TabsTrigger value="tools">{t("ابزارها و جستجوها")} ({formatNumber(data.tool_calls.length)})</TabsTrigger>
+          <TabsTrigger value="feedback">{t("بازخورد و راه‌حل‌ها")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="chat">
@@ -116,8 +118,8 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
                   <MessageBubble message={m} conversationId={id} />
                   {turn ? (
                     <div className="flex flex-wrap gap-1.5 pe-0 ps-11 text-xs">
-                      <Badge>منبع اصلی: {SOURCE_LABEL[turn.primary_source] ?? turn.primary_source}</Badge>
-                      <Badge>{WEB_EVENT_LABEL[turn.web_event] ?? turn.web_event}</Badge>
+                      <Badge>{t("منبع اصلی")}: {t(SOURCE_LABEL[turn.primary_source] ?? turn.primary_source)}</Badge>
+                      <Badge>{t(WEB_EVENT_LABEL[turn.web_event] ?? turn.web_event)}</Badge>
                       {turn.signature_text ? (
                         <Badge className="ltr max-w-md truncate" title={turn.signature_text}>
                           sig: {turn.signature_text}
@@ -132,19 +134,19 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
         </TabsContent>
 
         <TabsContent value="tools">
-          {data.tool_calls.length === 0 ? <Empty>ابزاری فراخوانی نشده است.</Empty> : null}
+          {data.tool_calls.length === 0 ? <Empty>{t("ابزاری فراخوانی نشده است.")}</Empty> : null}
           <div className="space-y-2">
-            {data.tool_calls.map((t) => (
-              <Card key={t.id}>
+            {data.tool_calls.map((call) => (
+              <Card key={call.id}>
                 <CardContent className="space-y-2 p-3">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <code className="ltr font-semibold">{t.tool}</code>
-                    <Badge tone={t.status === "ok" ? "success" : t.status === "error" ? "danger" : "warning"}>{t.status}</Badge>
-                    <span className="text-xs text-muted-foreground">{t.duration_ms.toLocaleString("fa-IR")} ms · {formatDateTime(t.created_at)}</span>
+                    <code className="ltr font-semibold">{call.tool}</code>
+                    <Badge tone={call.status === "ok" ? "success" : call.status === "error" ? "danger" : "warning"}>{call.status}</Badge>
+                    <span className="text-xs text-muted-foreground">{formatNumber(call.duration_ms)} ms · {formatDateTime(call.created_at)}</span>
                   </div>
                   <details>
-                    <summary className="cursor-pointer text-xs text-muted-foreground">ورودی / خروجی</summary>
-                    <pre className="mt-1 max-h-72 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify({ input: t.input, output: t.output }, null, 2)}</pre>
+                    <summary className="cursor-pointer text-xs text-muted-foreground">{t("ورودی / خروجی")}</summary>
+                    <pre className="mt-1 max-h-72 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify({ input: call.input, output: call.output }, null, 2)}</pre>
                   </details>
                 </CardContent>
               </Card>
@@ -156,13 +158,13 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>بازخوردهای کاربر</CardTitle>
+                <CardTitle>{t("بازخوردهای کاربر")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                {data.feedback.length === 0 ? <p className="text-sm text-muted-foreground">بازخوردی ثبت نشده است.</p> : null}
+                {data.feedback.length === 0 ? <p className="text-sm text-muted-foreground">{t("بازخوردی ثبت نشده است.")}</p> : null}
                 {data.feedback.map((f) => (
                   <div key={f.id} className="flex items-center gap-2 text-sm">
-                    <Badge tone={f.outcome === "confirmed" ? "success" : "danger"}>{f.outcome === "confirmed" ? "تأیید" : "رد"}</Badge>
+                    <Badge tone={f.outcome === "confirmed" ? "success" : "danger"}>{f.outcome === "confirmed" ? t("تأیید") : t("رد")}</Badge>
                     <span className="text-muted-foreground">{formatDateTime(f.created_at)}</span>
                     {f.note ? <span dir="auto">{f.note}</span> : null}
                   </div>
@@ -171,10 +173,10 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>راه‌حل‌های کاندید</CardTitle>
+                <CardTitle>{t("راه‌حل‌های کاندید")}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {data.solutions.length === 0 ? <p className="text-sm text-muted-foreground">راه‌حلی تأیید نشده است.</p> : null}
+                {data.solutions.length === 0 ? <p className="text-sm text-muted-foreground">{t("راه‌حلی تأیید نشده است.")}</p> : null}
                 {data.solutions.map((s) => (
                   <div key={s.id} className="space-y-1.5 rounded-md border border-border p-2.5">
                     <div className="flex items-center gap-2">
@@ -185,7 +187,7 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
                     </div>
                     {s.status === "candidate" ? (
                       <Button size="sm" variant="dangerOutline" onClick={() => reject.mutate(s.id)} disabled={reject.isPending}>
-                        رد راه‌حل (حذف از جستجوی معنایی)
+                        {t("رد راه‌حل (حذف از جستجوی معنایی)")}
                       </Button>
                     ) : null}
                   </div>
@@ -196,7 +198,7 @@ export default function InspectorPage({ params }: { params: { id: string } }) {
           {data.messages.some((m) => m.citations.length) ? (
             <Card className="mt-4">
               <CardHeader>
-                <CardTitle>منابع آخرین پاسخ</CardTitle>
+                <CardTitle>{t("منابع آخرین پاسخ")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <CitationList citations={[...data.messages].reverse().find((m) => m.citations.length)?.citations ?? []} />

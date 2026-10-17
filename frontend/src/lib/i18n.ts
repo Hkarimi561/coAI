@@ -24,6 +24,7 @@ export function setDir(dir: Dir) {
   const root = document.documentElement;
   root.dir = dir;
   root.lang = dir === "ltr" ? "en" : "fa";
+  document.title = translate(dir, "دستیار هوشمند DevOps");
   listeners.forEach((l) => l());
 }
 
@@ -31,6 +32,9 @@ export function setDir(dir: Dir) {
 export function translate(dir: Dir, fa: string): string {
   return dir === "ltr" ? (EN[fa] ?? fa) : fa;
 }
+
+/** For helpers outside React components: reads the current direction at call time. */
+export const tNow = (fa: string): string => translate(typeof document !== "undefined" && document.documentElement.dir === "ltr" ? "ltr" : "rtl", fa);
 
 export function useT() {
   const dir = useDir();

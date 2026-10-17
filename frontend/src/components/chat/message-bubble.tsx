@@ -8,6 +8,7 @@ import { CitationList } from "@/components/chat/citations";
 import { MessageImages } from "@/components/chat/message-images";
 import { Markdown } from "@/components/markdown";
 import { Badge } from "@/components/ui/badge";
+import { useT } from "@/lib/i18n";
 import { SOURCE_LABEL, WEB_EVENT_LABEL } from "@/lib/labels";
 import type { Message } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ interface BubbleProps {
 }
 
 export function MessageBubble({ message, streaming = false, conversationId, localImages }: BubbleProps) {
+  const t = useT();
   const isUser = message.role === "user";
   const meta = message.meta;
   const imageUrls = localImages?.length
@@ -59,7 +61,7 @@ export function MessageBubble({ message, streaming = false, conversationId, loca
               <div className="mt-3">
                 <Badge tone="info">
                   <span dir="ltr">
-                    دستور MCP · /{meta.mcp_command.server}
+                    {t("دستور MCP")} · /{meta.mcp_command.server}
                     {meta.mcp_command.tool ? `@${meta.mcp_command.tool}` : ""}
                   </span>
                 </Badge>
@@ -69,7 +71,7 @@ export function MessageBubble({ message, streaming = false, conversationId, loca
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {meta.skills?.map((n) => (
                   <Badge key={n} tone="info">
-                    مهارت: {n}
+                    {t("مهارت")}: {n}
                   </Badge>
                 ))}
               </div>
@@ -92,20 +94,20 @@ export function MessageBubble({ message, streaming = false, conversationId, loca
                           MCP · {c.server ?? "?"}/{c.tool}
                         </span>
                       </Badge>
-                      <span className="text-muted-foreground">{c.ok ? "نتیجه‌ی ابزار (برای دیدن مدرک باز کنید)" : "ابزار با خطا مواجه شد"}</span>
+                      <span className="text-muted-foreground">{t(c.ok ? "نتیجه‌ی ابزار (برای دیدن مدرک باز کنید)" : "ابزار با خطا مواجه شد")}</span>
                       <span className="ms-auto text-[11px] text-muted-foreground">{c.ms} ms</span>
                     </summary>
                     <div className="space-y-1.5 border-t border-border p-2.5">
                       {c.args && Object.keys(c.args).length ? (
                         <div>
-                          <div className="mb-0.5 text-muted-foreground">ورودی</div>
+                          <div className="mb-0.5 text-muted-foreground">{t("ورودی")}</div>
                           <pre dir="ltr" className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2 text-left">
                             {JSON.stringify(c.args, null, 2)}
                           </pre>
                         </div>
                       ) : null}
                       <div>
-                        <div className="mb-0.5 text-muted-foreground">خروجی</div>
+                        <div className="mb-0.5 text-muted-foreground">{t("خروجی")}</div>
                         <pre dir="auto" className="max-h-[55vh] overflow-auto whitespace-pre-wrap break-words rounded bg-card p-2">
                           {c.result || "—"}
                         </pre>
@@ -118,12 +120,12 @@ export function MessageBubble({ message, streaming = false, conversationId, loca
             {!streaming && meta.risky_commands?.length ? (
               <div role="alert" className="mt-3 space-y-1.5 rounded-md border border-danger/40 bg-danger/10 p-3 text-xs">
                 <div className="flex items-center gap-1.5 text-sm font-semibold text-danger">
-                  <AlertTriangle className="h-4 w-4" /> این پاسخ دستورهای پرریسک دارد؛ قبل از اجرا بررسی و در صورت امکان بکاپ بگیرید
+                  <AlertTriangle className="h-4 w-4" /> {t("این پاسخ دستورهای پرریسک دارد؛ قبل از اجرا بررسی و در صورت امکان بکاپ بگیرید")}
                 </div>
                 <ul className="space-y-1">
                   {meta.risky_commands.map((r, i) => (
                     <li key={i} className="flex flex-wrap items-baseline gap-2">
-                      <Badge tone={r.severity === "high" ? "danger" : "warning"}>{r.severity === "high" ? "خطرناک" : "احتیاط"}</Badge>
+                      <Badge tone={r.severity === "high" ? "danger" : "warning"}>{t(r.severity === "high" ? "خطرناک" : "احتیاط")}</Badge>
                       <code dir="ltr" className="rounded bg-card px-1.5 py-0.5 text-left">
                         {r.command}
                       </code>
@@ -143,10 +145,10 @@ export function MessageBubble({ message, streaming = false, conversationId, loca
             {!streaming && meta.primary_source ? (
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {meta.confidence ? <ConfidenceBadge level={meta.confidence} /> : null}
-                <Badge tone="neutral">منبع اصلی: {SOURCE_LABEL[meta.primary_source] ?? meta.primary_source}</Badge>
-                {meta.answer_cache === "hit" ? <Badge tone="info">پاسخ از حافظه‌ی گفتگوها (جستجو انجام نشد)</Badge> : null}
-                {meta.refreshed ? <Badge tone="info">جستجوی دوباره انجام شد</Badge> : null}
-                {meta.web_event && meta.web_event !== "none" ? <Badge tone="neutral">{WEB_EVENT_LABEL[meta.web_event] ?? meta.web_event}</Badge> : null}
+                <Badge tone="neutral">{t("منبع اصلی")}: {t(SOURCE_LABEL[meta.primary_source] ?? meta.primary_source)}</Badge>
+                {meta.answer_cache === "hit" ? <Badge tone="info">{t("پاسخ از حافظه‌ی گفتگوها (جستجو انجام نشد)")}</Badge> : null}
+                {meta.refreshed ? <Badge tone="info">{t("جستجوی دوباره انجام شد")}</Badge> : null}
+                {meta.web_event && meta.web_event !== "none" ? <Badge tone="neutral">{t(WEB_EVENT_LABEL[meta.web_event] ?? meta.web_event)}</Badge> : null}
               </div>
             ) : null}
           </>
@@ -164,10 +166,11 @@ const CONFIDENCE = {
 } as const;
 
 function ConfidenceBadge({ level }: { level: keyof typeof CONFIDENCE }) {
+  const t = useT();
   const c = CONFIDENCE[level];
   return (
-    <span title={c.hint}>
-      <Badge tone={c.tone}>{c.text}</Badge>
+    <span title={t(c.hint)}>
+      <Badge tone={c.tone}>{t(c.text)}</Badge>
     </span>
   );
 }

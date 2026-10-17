@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEve
 
 import { Spinner } from "@/components/ui/misc";
 import type { McpCommand } from "@/lib/types";
-import { useT } from "@/lib/i18n";
+import { tNow, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 240; // px, then the textarea scrolls
@@ -45,7 +45,7 @@ function suggest(token: string | null, commands: McpCommand[]): Suggestion[] {
   const toolSug = (c: McpCommand, tool: McpCommand["tools"][number]): Suggestion => ({
     insert: `/${c.server}@${tool.name} `,
     label: `/${c.server}@${tool.name}`,
-    hint: tool.destructive ? `⚠ تغییر وضعیت — ${tool.description}` : tool.description,
+    hint: tool.destructive ? `⚠ ${tNow("تغییر وضعیت")} — ${tool.description}` : tool.description,
     kind: "tool",
   });
   if (t.includes("@")) {
@@ -58,7 +58,7 @@ function suggest(token: string | null, commands: McpCommand[]): Suggestion[] {
     out.push({
       insert: `/${c.server} `,
       label: `/${c.server}`,
-      hint: c.hint || `ابزارها: ${c.tools.map((x) => x.name).join("، ")}`,
+      hint: c.hint || `${tNow("ابزارها:")} ${c.tools.map((x) => x.name).join(", ")}`,
       kind: "server",
     });
     if (c.server === t) out.push(...c.tools.map((x) => toolSug(c, x))); // exact server typed: also offer its tools

@@ -25,6 +25,7 @@ import { useAdminOverview } from "@/components/admin/overview";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/misc";
 import { can, isStaff, useMe } from "@/lib/auth";
+import { tNow, useT } from "@/lib/i18n";
 import type { AdminOverview } from "@/lib/types";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -59,18 +60,18 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         icon: FileText,
         perm: "documents.manage",
         badge: (o) => ({
-          text: `${formatNumber(o.documents.chunks)} چانک`,
+          text: `${formatNumber(o.documents.chunks)} ${tNow("چانک")}`,
           tone: o.documents.errors ? "danger" : "info",
-          title: `${formatNumber(o.documents.count)} سند · ${formatNumber(o.documents.chunks)} چانک${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} سند با خطا` : ""}`,
+          title: `${formatNumber(o.documents.count)} ${tNow("سند")} · ${formatNumber(o.documents.chunks)} ${tNow("چانک")}${o.documents.errors ? ` · ${formatNumber(o.documents.errors)} ${tNow("سند با خطا")}` : ""}`,
         }),
       },
-      { href: "/admin/skills", label: "مهارت‌ها", icon: Sparkles, perm: "skills.manage", badge: (o) => (o.skills.total ? { text: formatNumber(o.skills.enabled), tone: "neutral", title: "مهارت‌های فعال" } : null) },
+      { href: "/admin/skills", label: "مهارت‌ها", icon: Sparkles, perm: "skills.manage", badge: (o) => (o.skills.total ? { text: formatNumber(o.skills.enabled), tone: "neutral", title: tNow("مهارت‌های فعال") } : null) },
       {
         href: "/admin/lessons",
         label: "آموزش‌ها",
         icon: GraduationCap,
         perm: "lessons.review",
-        badge: (o) => (o.lessons_pending ? { text: formatNumber(o.lessons_pending), tone: "warning", title: "در انتظار تأیید" } : null),
+        badge: (o) => (o.lessons_pending ? { text: formatNumber(o.lessons_pending), tone: "warning", title: tNow("در انتظار تأیید") } : null),
       },
       { href: "/admin/gaps", label: "شکاف‌های دانش", icon: SearchX, perm: "gaps.view" },
       { href: "/admin/cache", label: "کش جستجوی وب", icon: Database, perm: "cache.manage", badge: (o) => (o.cache_entries ? { text: formatNumber(o.cache_entries), tone: "neutral" } : null) },
@@ -84,7 +85,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         label: "سرورهای MCP",
         icon: Plug,
         perm: "mcp.manage",
-        badge: (o) => (o.mcp.servers ? { text: formatNumber(o.mcp.servers), tone: "neutral", title: `${formatNumber(o.mcp.servers)} سرور (${formatNumber(o.mcp.enabled)} فعال) · ${formatNumber(o.mcp.tools_enabled)} ابزار فعال` } : null),
+        badge: (o) => (o.mcp.servers ? { text: formatNumber(o.mcp.servers), tone: "neutral", title: `${formatNumber(o.mcp.servers)} ${tNow("سرور")} (${formatNumber(o.mcp.enabled)} ${tNow("فعال")}) · ${formatNumber(o.mcp.tools_enabled)} ${tNow("ابزار فعال")}` } : null),
       },
     ],
   },
@@ -96,7 +97,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
         label: "گفتگوها",
         icon: MessagesSquare,
         perm: "conversations.view_all",
-        badge: (o) => (o.conversations.pending_review ? { text: formatNumber(o.conversations.pending_review), tone: "warning", title: "منتظر بازبینی" } : null),
+        badge: (o) => (o.conversations.pending_review ? { text: formatNumber(o.conversations.pending_review), tone: "warning", title: tNow("منتظر بازبینی") } : null),
       },
     ],
   },
@@ -111,6 +112,7 @@ const GROUPS: { title: string; items: NavItem[] }[] = [
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
+  const t = useT();
   const { data: me } = useMe();
   const { data: overview } = useAdminOverview();
   const router = useRouter();
@@ -137,20 +139,20 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <div className="flex h-full flex-col md:flex-row">
       {/* mobile bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-4 py-2 md:hidden">
-        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="منوی مدیریت" className="rounded-md p-1.5 hover:bg-muted">
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label={t("منوی مدیریت")} className="rounded-md p-1.5 hover:bg-muted">
           {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
-        <span className="text-sm font-medium">{current?.label ?? "مدیریت"}</span>
+        <span className="text-sm font-medium">{t(current?.label ?? "مدیریت")}</span>
       </div>
 
       <aside
-        aria-label="مدیریت"
+        aria-label={t("مدیریت")}
         className={cn("shrink-0 overflow-y-auto border-border bg-card md:block md:w-64 md:border-e", open ? "block max-h-[60vh] border-b" : "hidden")}
       >
         <nav className="space-y-5 p-3">
           {groups.map((g) => (
             <div key={g.title}>
-              <div className="mb-1 px-3 text-[11px] font-semibold tracking-wide text-muted-foreground">{g.title}</div>
+              <div className="mb-1 px-3 text-[11px] font-semibold tracking-wide text-muted-foreground">{t(g.title)}</div>
               <ul className="space-y-0.5">
                 {g.items.map((item) => {
                   const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -166,7 +168,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                         )}
                       >
                         <item.icon className="h-4 w-4 shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                        <span className="min-w-0 flex-1 truncate">{t(item.label)}</span>
                         {badge ? (
                           <span title={badge.title}>
                             <Badge tone={badge.tone} className="tabular-nums">

@@ -13,8 +13,10 @@ import { Empty, ErrorBanner, Pager, Spinner } from "@/components/ui/misc";
 import { api, qs } from "@/lib/api";
 import type { CacheDetail, CacheRow, Paged } from "@/lib/types";
 import { formatDateTime, formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export default function CachePage() {
+  const t = useT();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState("");
@@ -48,32 +50,32 @@ export default function CachePage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="me-auto text-lg font-bold">کش جستجوی وب</h1>
+        <h1 className="me-auto text-lg font-bold">{t("کش جستجوی وب")}</h1>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={showInvalid} onChange={(e) => setShowInvalid(e.target.checked)} /> نمایش ابطال‌شده‌ها
+          <input type="checkbox" checked={showInvalid} onChange={(e) => setShowInvalid(e.target.checked)} /> {t("نمایش ابطال‌شده‌ها")}
         </label>
         <div className="relative">
           <Search className="pointer-events-none absolute start-3 top-3 h-4 w-4 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="جستجو در پرس‌وجو یا امضای خطا…" className="w-72 ps-9" aria-label="جستجو" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("جستجو در پرس‌وجو یا امضای خطا…")} className="w-72 ps-9" aria-label={t("جستجو")} />
         </div>
       </div>
       <p className="text-sm text-muted-foreground">
-        هر مشکل تکراری فقط یک‌بار در وب جستجو می‌شود (قفل single-flight). ابطال یک ورودی باعث می‌شود دفعه‌ی بعد دوباره جستجو شود.
+        {t("هر مشکل تکراری فقط یک‌بار در وب جستجو می‌شود (قفل single-flight). ابطال یک ورودی باعث می‌شود دفعه‌ی بعد دوباره جستجو شود.")}
       </p>
 
       <ErrorBanner error={list.error ?? invalidate.error} />
       {list.isLoading ? <Spinner className="mx-auto" /> : null}
-      {list.data && list.data.items.length === 0 ? <Empty>ورودی‌ای در کش وجود ندارد.</Empty> : null}
+      {list.data && list.data.items.length === 0 ? <Empty>{t("ورودی‌ای در کش وجود ندارد.")}</Empty> : null}
       {list.data && list.data.items.length > 0 ? (
         <Card className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted text-xs text-muted-foreground">
               <tr>
-                <th className="p-3 text-start">پرس‌وجو / امضای خطا</th>
-                <th className="p-3 text-start">نتایج</th>
-                <th className="p-3 text-start">استفاده</th>
-                <th className="p-3 text-start">ایجاد</th>
-                <th className="p-3 text-start">انقضا</th>
+                <th className="p-3 text-start">{t("پرس‌وجو / امضای خطا")}</th>
+                <th className="p-3 text-start">{t("نتایج")}</th>
+                <th className="p-3 text-start">{t("استفاده")}</th>
+                <th className="p-3 text-start">{t("ایجاد")}</th>
+                <th className="p-3 text-start">{t("انقضا")}</th>
                 <th className="p-3" />
               </tr>
             </thead>
@@ -94,15 +96,15 @@ export default function CachePage() {
                   <td className="p-3">{formatNumber(e.hit_count)}</td>
                   <td className="p-3 text-muted-foreground">{formatDateTime(e.created_at)}</td>
                   <td className="p-3">
-                    {e.invalidated_at ? <Badge tone="danger">ابطال‌شده</Badge> : <span className="text-muted-foreground">{formatDateTime(e.expires_at)}</span>}
+                    {e.invalidated_at ? <Badge tone="danger">{t("ابطال‌شده")}</Badge> : <span className="text-muted-foreground">{formatDateTime(e.expires_at)}</span>}
                   </td>
                   <td className="p-3">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon" variant="ghost" aria-label="مشاهده" onClick={() => setViewId(e.id)}>
+                      <Button size="icon" variant="ghost" aria-label={t("مشاهده")} onClick={() => setViewId(e.id)}>
                         <Eye className="h-4 w-4" />
                       </Button>
                       {!e.invalidated_at ? (
-                        <Button size="icon" variant="ghost" aria-label="ابطال" onClick={() => setToInvalidate(e)}>
+                        <Button size="icon" variant="ghost" aria-label={t("ابطال")} onClick={() => setToInvalidate(e)}>
                           <Trash2 className="h-4 w-4 text-danger" />
                         </Button>
                       ) : null}
@@ -117,7 +119,7 @@ export default function CachePage() {
       {list.data ? <Pager page={list.data.page} pageSize={list.data.page_size} total={list.data.total} onPage={setPage} /> : null}
 
       <Dialog open={!!viewId} onOpenChange={(o) => !o && setViewId(null)}>
-        <DialogContent title="جزئیات ورودی کش" className="max-w-3xl">
+        <DialogContent title={t("جزئیات ورودی کش")} className="max-w-3xl">
           {detail.isLoading ? <Spinner /> : null}
           {detail.data ? (
             <div className="space-y-3 text-sm">
@@ -134,7 +136,7 @@ export default function CachePage() {
               </ul>
               {detail.data.answer ? (
                 <details>
-                  <summary className="cursor-pointer text-muted-foreground">پاسخ ذخیره‌شده</summary>
+                  <summary className="cursor-pointer text-muted-foreground">{t("پاسخ ذخیره‌شده")}</summary>
                   <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs" dir="auto">
                     {detail.data.answer}
                   </pre>
@@ -146,14 +148,14 @@ export default function CachePage() {
       </Dialog>
 
       <Dialog open={!!toInvalidate} onOpenChange={(o) => !o && setToInvalidate(null)}>
-        <DialogContent title="ابطال ورودی کش" description="دفعه‌ی بعد که این مشکل پرسیده شود، جستجوی تازه‌ی وب انجام می‌شود.">
+        <DialogContent title={t("ابطال ورودی کش")} description={t("دفعه‌ی بعد که این مشکل پرسیده شود، جستجوی تازه‌ی وب انجام می‌شود.")}>
           <code className="ltr mb-4 block truncate text-xs">{toInvalidate?.query_text}</code>
           <div className="flex gap-2">
             <Button variant="danger" disabled={invalidate.isPending} onClick={() => toInvalidate && invalidate.mutate(toInvalidate.id)}>
-              {invalidate.isPending ? <Spinner /> : null} ابطال
+              {invalidate.isPending ? <Spinner /> : null} {t("ابطال")}
             </Button>
             <DialogClose asChild>
-              <Button variant="outline">انصراف</Button>
+              <Button variant="outline">{t("انصراف")}</Button>
             </DialogClose>
           </div>
         </DialogContent>

@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { api } from "@/lib/api";
 import type { McpServerRow } from "@/lib/types";
 import { formatDateTime, formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 function parseHeaders(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -25,6 +26,7 @@ function parseHeaders(text: string): Record<string, string> {
 }
 
 export default function McpPage() {
+  const t = useT();
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set()); // every server starts collapsed
@@ -75,19 +77,19 @@ export default function McpPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="me-auto text-lg font-bold">سرورهای MCP</h1>
+        <h1 className="me-auto text-lg font-bold">{t("سرورهای MCP")}</h1>
         <Button onClick={() => setAdding(true)}>
-          <Plus className="h-4 w-4" /> سرور جدید
+          <Plus className="h-4 w-4" /> {t("سرور جدید")}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        دستیار فقط ابزارهایی را می‌تواند صدا بزند که شما اینجا فعال کنید. ابزارهای تازه کشف‌شده به‌صورت پیش‌فرض غیرفعال‌اند. فقط ابزارهای خواندنی (read-only) را فعال کنید؛
-        هر فراخوانی در پاسخ نمایش داده و در گفتگوها ثبت می‌شود. نتیجه‌ی ابزارها «داده‌ی نامطمئن» تلقی می‌شود.
+        {t("دستیار فقط ابزارهایی را می‌تواند صدا بزند که شما اینجا فعال کنید. ابزارهای تازه کشف‌شده به‌صورت پیش‌فرض غیرفعال‌اند. فقط ابزارهای خواندنی (read-only) را فعال کنید؛")}
+        {t("هر فراخوانی در پاسخ نمایش داده و در گفتگوها ثبت می‌شود. نتیجه‌ی ابزارها «داده‌ی نامطمئن» تلقی می‌شود.")}
       </p>
 
       <ErrorBanner error={servers.error ?? create.error ?? sync.error ?? toggle.error ?? setTools.error ?? remove.error} />
       {servers.isLoading ? <Spinner className="mx-auto" /> : null}
-      {servers.data?.length === 0 ? <Empty>هنوز سروری اضافه نشده است.</Empty> : null}
+      {servers.data?.length === 0 ? <Empty>{t("هنوز سروری اضافه نشده است.")}</Empty> : null}
 
       {servers.data?.map((s) => {
         const isOpen = expanded.has(s.id);
@@ -99,7 +101,7 @@ export default function McpPage() {
               onClick={() => toggleOpen(s.id)}
               aria-expanded={isOpen}
               aria-controls={`mcp-${s.id}`}
-              aria-label={isOpen ? `بستن ${s.name}` : `باز کردن ${s.name}`}
+              aria-label={`${t(isOpen ? "بستن" : "باز کردن")} ${s.name}`}
               className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-muted"
             >
               {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronLeft className="h-4 w-4 text-muted-foreground" />}
@@ -107,19 +109,19 @@ export default function McpPage() {
               <span className="font-semibold">{s.name}</span>
             </button>
             <Badge tone="neutral">{s.transport === "sse" ? "SSE" : "HTTP"}</Badge>
-            {s.forward_user ? <Badge tone="info" title="هویت کاربر پرسنده برای اعمال دسترسی‌ها به سرور ارسال می‌شود">دسترسی هر کاربر</Badge> : null}
+            {s.forward_user ? <Badge tone="info" title={t("هویت کاربر پرسنده برای اعمال دسترسی‌ها به سرور ارسال می‌شود")}>{t("دسترسی هر کاربر")}</Badge> : null}
             {!isOpen && s.tools.length ? (
               <Badge tone={s.enabled_tools.length ? "success" : "neutral"}>
-                {formatNumber(s.enabled_tools.length)} از {formatNumber(s.tools.length)} ابزار فعال
+                {t("{a} از {b} ابزار فعال").replace("{a}", formatNumber(s.enabled_tools.length)).replace("{b}", formatNumber(s.tools.length))}
               </Badge>
             ) : null}
-            {!isOpen && s.last_error ? <Badge tone="danger">خطا</Badge> : null}
+            {!isOpen && s.last_error ? <Badge tone="danger">{t("خطا")}</Badge> : null}
             <code className="ltr min-w-0 flex-1 truncate text-xs text-muted-foreground">{s.url}</code>
             <Button size="sm" variant="outline" disabled={sync.isPending && sync.variables === s.id} onClick={() => sync.mutate(s.id)}>
-              {sync.isPending && sync.variables === s.id ? <Spinner /> : <RefreshCw className="h-4 w-4" />} اتصال و دریافت ابزارها
+              {sync.isPending && sync.variables === s.id ? <Spinner /> : <RefreshCw className="h-4 w-4" />} {t("اتصال و دریافت ابزارها")}
             </Button>
-            <Switch checked={s.enabled} label={`فعال بودن ${s.name}`} onChange={(v) => toggle.mutate({ id: s.id, enabled: v })} />
-            <Button size="icon" variant="ghost" aria-label="حذف" onClick={() => setToDelete(s)}>
+            <Switch checked={s.enabled} label={`${t("فعال بودن")} ${s.name}`} onChange={(v) => toggle.mutate({ id: s.id, enabled: v })} />
+            <Button size="icon" variant="ghost" aria-label={t("حذف")} onClick={() => setToDelete(s)}>
               <Trash2 className="h-4 w-4 text-danger" />
             </Button>
           </div>
@@ -130,41 +132,41 @@ export default function McpPage() {
             dir="auto"
             maxLength={200}
             defaultValue={s.description}
-            placeholder="توضیح کوتاه (hint در فهرست دستورهای چت)"
-            aria-label="توضیح کوتاه"
+            placeholder={t("توضیح کوتاه (hint در فهرست دستورهای چت)")}
+            aria-label={t("توضیح کوتاه")}
             className="h-8 text-xs"
             onBlur={(e) => e.target.value !== s.description && describe.mutate({ id: s.id, description: e.target.value })}
           />
           <p className="text-xs text-muted-foreground">
-            دستور چت: <code dir="ltr">/{s.name}</code> یا <code dir="ltr">/{s.name}@ابزار</code>
+            {t("دستور چت:")} <code dir="ltr">/{s.name}</code> {t("یا")} <code dir="ltr">/{s.name}@{t("ابزار")}</code>
           </p>
-          {s.header_names.length ? <p className="text-xs text-muted-foreground">هدرها: {s.header_names.join("، ")} (مقدارها نمایش داده نمی‌شوند)</p> : null}
+          {s.header_names.length ? <p className="text-xs text-muted-foreground">{t("هدرها")}: {s.header_names.join(", ")} {t("(مقدارها نمایش داده نمی‌شوند)")}</p> : null}
           {s.last_error ? <p className="ltr whitespace-pre-wrap break-words rounded-md bg-danger/10 p-2 text-xs text-danger">{s.last_error}</p> : null}
-          {s.synced_at ? <p className="text-xs text-muted-foreground">آخرین همگام‌سازی: {formatDateTime(s.synced_at)}</p> : null}
+          {s.synced_at ? <p className="text-xs text-muted-foreground">{t("آخرین همگام‌سازی")}: {formatDateTime(s.synced_at)}</p> : null}
 
           {s.tools.length ? (
             <div className="space-y-1 border-t border-border pt-3">
               <div className="mb-1 text-sm font-medium">
-                ابزارها ({formatNumber(s.enabled_tools.length)} از {formatNumber(s.tools.length)} فعال)
+                {t("ابزارها")} ({t("{a} از {b} فعال").replace("{a}", formatNumber(s.enabled_tools.length)).replace("{b}", formatNumber(s.tools.length))})
               </div>
-              {s.tools.map((t) => {
-                const on = s.enabled_tools.includes(t.name);
+              {s.tools.map((tool) => {
+                const on = s.enabled_tools.includes(tool.name);
                 return (
-                  <div key={t.name} className="flex items-start gap-3 rounded-md px-2 py-1.5 hover:bg-muted">
+                  <div key={tool.name} className="flex items-start gap-3 rounded-md px-2 py-1.5 hover:bg-muted">
                     <Switch
                       checked={on}
-                      label={`فعال بودن ابزار ${t.name}`}
+                      label={`${t("فعال بودن ابزار")} ${tool.name}`}
                       disabled={setTools.isPending}
-                      onChange={(v) => setTools.mutate({ id: s.id, tools: v ? [...s.enabled_tools, t.name] : s.enabled_tools.filter((x) => x !== t.name) })}
+                      onChange={(v) => setTools.mutate({ id: s.id, tools: v ? [...s.enabled_tools, tool.name] : s.enabled_tools.filter((x) => x !== tool.name) })}
                     />
                     <div className="min-w-0">
                       <span className="flex flex-wrap items-center gap-2">
-                        <code className="ltr text-sm font-medium">{t.name}</code>
-                        {t.destructive ? <Badge tone="warning" title="فقط با دستور صریح (مثلاً /docker@restart_container) اجرا می‌شود">تغییر وضعیت · فقط با دستور صریح</Badge> : null}
+                        <code className="ltr text-sm font-medium">{tool.name}</code>
+                        {tool.destructive ? <Badge tone="warning" title={t("فقط با دستور صریح (مثلاً /docker@restart_container) اجرا می‌شود")}>{t("تغییر وضعیت · فقط با دستور صریح")}</Badge> : null}
                       </span>
-                      {t.description ? (
-                        <p className="line-clamp-2 text-xs text-muted-foreground" dir="auto" title={t.description}>
-                          {t.description}
+                      {tool.description ? (
+                        <p className="line-clamp-2 text-xs text-muted-foreground" dir="auto" title={tool.description}>
+                          {tool.description}
                         </p>
                       ) : null}
                     </div>
@@ -173,7 +175,7 @@ export default function McpPage() {
               })}
             </div>
           ) : !s.last_error ? (
-            <p className="text-xs text-muted-foreground">ابزاری دریافت نشده؛ «اتصال و دریافت ابزارها» را بزنید.</p>
+            <p className="text-xs text-muted-foreground">{t("ابزاری دریافت نشده؛ «اتصال و دریافت ابزارها» را بزنید.")}</p>
           ) : null}
           </div>
           ) : null}
@@ -182,7 +184,7 @@ export default function McpPage() {
       })}
 
       <Dialog open={adding} onOpenChange={setAdding}>
-        <DialogContent title="سرور MCP جدید" description="فقط سرورهای راه‌دور (Streamable HTTP یا SSE) پشتیبانی می‌شوند. بک‌اند باید به آدرس دسترسی شبکه داشته باشد.">
+        <DialogContent title={t("سرور MCP جدید")} description={t("فقط سرورهای راه‌دور (Streamable HTTP یا SSE) پشتیبانی می‌شوند. بک‌اند باید به آدرس دسترسی شبکه داشته باشد.")}>
           <form
             className="space-y-3"
             onSubmit={(e) => {
@@ -191,39 +193,39 @@ export default function McpPage() {
             }}
           >
             <label className="block space-y-1 text-sm">
-              <span>نام (حروف کوچک انگلیسی، عدد، - یا _)</span>
+              <span>{t("نام (حروف کوچک انگلیسی، عدد، - یا _)")}</span>
               <Input dir="ltr" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="grafana" />
             </label>
             <label className="block space-y-1 text-sm">
-              <span>توضیح کوتاه (hint در فهرست دستورها)</span>
-              <Input dir="auto" maxLength={200} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="بررسی DNS، پورت، HTTP و گواهی SSL" />
+              <span>{t("توضیح کوتاه (hint در فهرست دستورها)")}</span>
+              <Input dir="auto" maxLength={200} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={t("بررسی DNS، پورت، HTTP و گواهی SSL")} />
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <Switch checked={form.forward_user} label="ارسال هویت کاربر" onChange={(v) => setForm({ ...form, forward_user: v })} />
-              ارسال هویت کاربر به سرور (برای سرورهایی که دسترسی هر کاربر را خودشان اعمال می‌کنند)
+              <Switch checked={form.forward_user} label={t("ارسال هویت کاربر")} onChange={(v) => setForm({ ...form, forward_user: v })} />
+              {t("ارسال هویت کاربر به سرور (برای سرورهایی که دسترسی هر کاربر را خودشان اعمال می‌کنند)")}
             </label>
             <label className="block space-y-1 text-sm">
-              <span>نوع اتصال</span>
+              <span>{t("نوع اتصال")}</span>
               <Select value={form.transport} onChange={(e) => setForm({ ...form, transport: e.target.value })}>
                 <option value="http">Streamable HTTP</option>
                 <option value="sse">SSE</option>
               </Select>
             </label>
             <label className="block space-y-1 text-sm">
-              <span>آدرس</span>
+              <span>{t("آدرس")}</span>
               <Input dir="ltr" required value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="http://host.docker.internal:8000/mcp" />
             </label>
             <label className="block space-y-1 text-sm">
-              <span>هدرها (اختیاری، هر خط «نام: مقدار»)</span>
+              <span>{t("هدرها (اختیاری، هر خط «نام: مقدار»)")}</span>
               <Textarea dir="ltr" rows={3} value={form.headers} onChange={(e) => setForm({ ...form, headers: e.target.value })} placeholder="Authorization: Bearer ..." />
             </label>
             <div className="flex gap-2">
               <Button type="submit" disabled={create.isPending}>
-                {create.isPending ? <Spinner /> : null} افزودن و دریافت ابزارها
+                {create.isPending ? <Spinner /> : null} {t("افزودن و دریافت ابزارها")}
               </Button>
               <DialogClose asChild>
                 <Button type="button" variant="outline">
-                  انصراف
+                  {t("انصراف")}
                 </Button>
               </DialogClose>
             </div>
@@ -232,16 +234,16 @@ export default function McpPage() {
       </Dialog>
 
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <DialogContent title="حذف سرور MCP" description="سرور و تنظیمات ابزارهایش حذف می‌شود.">
+        <DialogContent title={t("حذف سرور MCP")} description={t("سرور و تنظیمات ابزارهایش حذف می‌شود.")}>
           <p className="mb-4 text-sm" dir="ltr">
             {toDelete?.name}
           </p>
           <div className="flex gap-2">
             <Button variant="danger" disabled={remove.isPending} onClick={() => toDelete && remove.mutate(toDelete.id)}>
-              {remove.isPending ? <Spinner /> : null} حذف
+              {remove.isPending ? <Spinner /> : null} {t("حذف")}
             </Button>
             <DialogClose asChild>
-              <Button variant="outline">انصراف</Button>
+              <Button variant="outline">{t("انصراف")}</Button>
             </DialogClose>
           </div>
         </DialogContent>

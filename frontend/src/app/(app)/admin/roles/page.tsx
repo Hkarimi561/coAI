@@ -12,8 +12,10 @@ import { ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import { can, useMe } from "@/lib/auth";
 import { formatNumber } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export default function RolesPage() {
+  const t = useT();
   const qc = useQueryClient();
   const { data: me } = useMe();
   const roles = useRoles();
@@ -32,17 +34,17 @@ export default function RolesPage() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold">نقش‌ها و دسترسی‌ها</h1>
+        <h1 className="text-lg font-bold">{t("نقش‌ها و دسترسی‌ها")}</h1>
         {manage ? (
           <Button size="sm" asChild>
             <Link href="/admin/roles/new">
-              <Plus className="h-4 w-4" /> نقش جدید
+              <Plus className="h-4 w-4" /> {t("نقش جدید")}
             </Link>
           </Button>
         ) : null}
       </div>
       <p className="text-sm text-muted-foreground">
-        هر کاربر می‌تواند چند نقش داشته باشد و هر نقش مجموعه‌ای از دسترسی‌های سیستم و دسترسی به کانتینرهای Docker است؛ دسترسی‌های کاربر اجتماع دسترسی‌های همه‌ی نقش‌های او است.
+        {t("هر کاربر می‌تواند چند نقش داشته باشد و هر نقش مجموعه‌ای از دسترسی‌های سیستم و دسترسی به کانتینرهای Docker است؛ دسترسی‌های کاربر اجتماع دسترسی‌های همه‌ی نقش‌های او است.")}
       </p>
       <ErrorBanner error={roles.error ?? remove.error} />
       {roles.isLoading ? <Spinner /> : null}
@@ -56,16 +58,16 @@ export default function RolesPage() {
                     <Link href={`/admin/roles/${r.id}`} className="font-semibold hover:text-primary" dir="auto">
                       {r.name}
                     </Link>
-                    {r.is_system ? <Badge tone="info">پیش‌فرض سیستم</Badge> : null}
-                    {r.locked ? <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="قفل" /> : null}
-                    <Badge>{formatNumber(r.user_count)} کاربر</Badge>
+                    {r.is_system ? <Badge tone="info">{t("پیش‌فرض سیستم")}</Badge> : null}
+                    {r.locked ? <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label={t("قفل")} /> : null}
+                    <Badge>{formatNumber(r.user_count)} {t("کاربر")}</Badge>
                   </div>
                   {r.description ? <p className="mt-0.5 text-xs text-muted-foreground" dir="auto">{r.description}</p> : null}
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <Button size="sm" variant="outline" asChild>
                     <Link href={`/admin/roles/${r.id}`}>
-                      <Pencil className="h-3.5 w-3.5" /> {manage ? "ویرایش" : "مشاهده"}
+                      <Pencil className="h-3.5 w-3.5" /> {manage ? t("ویرایش") : t("مشاهده")}
                     </Link>
                   </Button>
                   {manage && !r.is_system ? (
@@ -74,9 +76,9 @@ export default function RolesPage() {
                       variant="outline"
                       disabled={remove.isPending}
                       onClick={() => {
-                        if (confirm(`نقش «${r.name}» حذف شود؟`)) remove.mutate(r.id);
+                        if (confirm(t("نقش «{name}» حذف شود؟").replace("{name}", r.name))) remove.mutate(r.id);
                       }}
-                      aria-label={`حذف ${r.name}`}
+                      aria-label={`${t("حذف")} ${r.name}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -84,13 +86,13 @@ export default function RolesPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-1">
-                {r.permissions.length === 0 && r.container_grants.length === 0 ? <span className="text-xs text-muted-foreground">بدون دسترسی ویژه (فقط گفتگو)</span> : null}
+                {r.permissions.length === 0 && r.container_grants.length === 0 ? <span className="text-xs text-muted-foreground">{t("بدون دسترسی ویژه (فقط گفتگو)")}</span> : null}
                 {r.permissions.map((k) => (
                   <Badge key={k} title={k}>{labelOf(k)}</Badge>
                 ))}
                 {r.container_grants.map((g) => (
-                  <Badge key={g.container} tone="info" title={g.level === "actions" ? "لاگ و عملیات" : "فقط لاگ"}>
-                    <span dir="ltr">{g.container}</span> · {g.level === "actions" ? "عملیات" : "لاگ"}
+                  <Badge key={g.container} tone="info" title={g.level === "actions" ? t("لاگ و عملیات") : t("فقط لاگ")}>
+                    <span dir="ltr">{g.container}</span> · {g.level === "actions" ? t("عملیات") : t("لاگ")}
                   </Badge>
                 ))}
               </div>

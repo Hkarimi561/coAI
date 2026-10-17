@@ -4,6 +4,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 export const Dialog = DialogPrimitive.Root;
@@ -21,6 +22,7 @@ export function DialogContent({
   children: ReactNode;
   className?: string;
 }) {
+  const t = useT();
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40" />
@@ -39,7 +41,7 @@ export function DialogContent({
               <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
             )}
           </div>
-          <DialogPrimitive.Close aria-label="بستن" className="rounded p-1 hover:bg-muted">
+          <DialogPrimitive.Close aria-label={t("بستن")} className="rounded p-1 hover:bg-muted">
             <X className="h-4 w-4" />
           </DialogPrimitive.Close>
         </div>

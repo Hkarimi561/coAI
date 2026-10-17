@@ -15,8 +15,9 @@ import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
 import type { DocumentFull, DocumentRow, ReindexReport } from "@/lib/types";
 import { formatNumber } from "@/lib/utils";
+import { tNow, useT } from "@/lib/i18n";
 
-const NEW_TEMPLATE = `# عنوان رانبوک
+const newTemplate = () => `# ${tNow("عنوان رانبوک")}
 
 ## Symptoms
 
@@ -25,13 +26,14 @@ const NEW_TEMPLATE = `# عنوان رانبوک
 ## Resolution Steps
 
 \`\`\`bash
-# دستورها را اینجا بنویسید
+# ${tNow("دستورها را اینجا بنویسید")}
 \`\`\`
 
 ## Verification
 `;
 
 export default function DocumentsPage() {
+  const t = useT();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
@@ -52,7 +54,7 @@ export default function DocumentsPage() {
     mutationFn: (force: boolean) => api.post<ReindexReport>(`/admin/documents/reindex?force=${force}`),
     onSuccess: (r) => {
       setReport(
-        `ایندکس‌شده: ${formatNumber(r.indexed.length)} · بدون تغییر: ${formatNumber(r.skipped)} · حذف‌شده: ${formatNumber(r.removed.length)} · خطا: ${formatNumber(r.errors.length)}` +
+        `${tNow("ایندکس‌شده:")} ${formatNumber(r.indexed.length)} · ${tNow("بدون تغییر:")} ${formatNumber(r.skipped)} · ${tNow("حذف‌شده:")} ${formatNumber(r.removed.length)} · ${tNow("خطا:")} ${formatNumber(r.errors.length)}` +
           (r.errors.length ? `\n${r.errors.map((e) => `${e.path}: ${e.error}`).join("\n")}` : ""),
       );
       void refresh();
@@ -92,17 +94,17 @@ export default function DocumentsPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="text-lg font-bold">مخزن مستندات تأییدشده</h1>
+        <h1 className="text-lg font-bold">{t("مخزن مستندات تأییدشده")}</h1>
         {overview.data ? (
-          <span className="me-auto flex items-center gap-1.5" title="مجموع چانک‌های مستندات در پایگاه دانش">
-            <Badge tone="info">{formatNumber(overview.data.documents.chunks)} چانک</Badge>
-            <Badge tone="neutral">{formatNumber(overview.data.documents.count)} سند</Badge>
+          <span className="me-auto flex items-center gap-1.5" title={t("مجموع چانک‌های مستندات در پایگاه دانش")}>
+            <Badge tone="info">{formatNumber(overview.data.documents.chunks)} {t("چانک")}</Badge>
+            <Badge tone="neutral">{formatNumber(overview.data.documents.count)} {t("سند")}</Badge>
           </span>
         ) : (
           <span className="me-auto" />
         )}
-        <Button variant="outline" onClick={() => setEditor({ path: "runbooks/new-runbook.md", content: NEW_TEMPLATE })}>
-          <FilePlus2 className="h-4 w-4" /> سند جدید
+        <Button variant="outline" onClick={() => setEditor({ path: "runbooks/new-runbook.md", content: newTemplate() })}>
+          <FilePlus2 className="h-4 w-4" /> {t("سند جدید")}
         </Button>
         <input
           ref={fileInput}
@@ -118,17 +120,17 @@ export default function DocumentsPage() {
           }}
         />
         <Button variant="outline" onClick={() => fileInput.current?.click()} disabled={upload.isPending}>
-          {upload.isPending ? <Spinner /> : <Upload className="h-4 w-4" />} بارگذاری Markdown
+          {upload.isPending ? <Spinner /> : <Upload className="h-4 w-4" />} {t("بارگذاری Markdown")}
         </Button>
         <Button variant="outline" onClick={() => reindex.mutate(false)} disabled={reindex.isPending}>
-          {reindex.isPending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} ایندکس تغییرات
+          {reindex.isPending ? <Spinner /> : <RefreshCw className="h-4 w-4" />} {t("ایندکس تغییرات")}
         </Button>
-        <Button variant="ghost" onClick={() => reindex.mutate(true)} disabled={reindex.isPending} title="همه‌ی فایل‌ها را دوباره ایندکس می‌کند">
-          ایندکس کامل
+        <Button variant="ghost" onClick={() => reindex.mutate(true)} disabled={reindex.isPending} title={t("همه‌ی فایل‌ها را دوباره ایندکس می‌کند")}>
+          {t("ایندکس کامل")}
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        فقط فایل‌های جدید یا تغییرکرده دوباره ایندکس می‌شوند (بر اساس هش محتوا). فایل‌های حذف‌شده از دیسک از Qdrant هم پاک می‌شوند.
+        {t("فقط فایل‌های جدید یا تغییرکرده دوباره ایندکس می‌شوند (بر اساس هش محتوا). فایل‌های حذف‌شده از دیسک از Qdrant هم پاک می‌شوند.")}
       </p>
 
       <IndexProgress />
@@ -149,7 +151,7 @@ export default function DocumentsPage() {
       ) : null}
 
       {docs.isLoading ? <Spinner className="mx-auto" /> : null}
-      {docs.data && docs.data.length === 0 ? <Empty>سندی ایندکس نشده است. فایل‌ها را در پوشه‌ی docs بگذارید و «ایندکس تغییرات» را بزنید.</Empty> : null}
+      {docs.data && docs.data.length === 0 ? <Empty>{t("سندی ایندکس نشده است. فایل‌ها را در پوشه‌ی docs بگذارید و «ایندکس تغییرات» را بزنید.")}</Empty> : null}
       {docs.data && docs.data.length > 0 ? (
         <DocTree
           docs={docs.data}
@@ -162,16 +164,16 @@ export default function DocumentsPage() {
       ) : null}
 
       <Dialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-        <DialogContent title="حذف سند" description="فایل از مخزن مستندات و بردارهای آن از Qdrant حذف می‌شود. این کار قابل بازگشت نیست.">
+        <DialogContent title={t("حذف سند")} description={t("فایل از مخزن مستندات و بردارهای آن از Qdrant حذف می‌شود. این کار قابل بازگشت نیست.")}>
           <p className="mb-4 text-sm" dir="ltr">
             {toDelete?.path}
           </p>
           <div className="flex gap-2">
             <Button variant="danger" disabled={remove.isPending} onClick={() => toDelete && remove.mutate(toDelete.id)}>
-              {remove.isPending ? <Spinner /> : null} حذف
+              {remove.isPending ? <Spinner /> : null} {t("حذف")}
             </Button>
             <DialogClose asChild>
-              <Button variant="outline">انصراف</Button>
+              <Button variant="outline">{t("انصراف")}</Button>
             </DialogClose>
           </div>
         </DialogContent>
