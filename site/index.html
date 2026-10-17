@@ -6,6 +6,7 @@
 <title>coAI Architecture Lab</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <style>
 /* Layout: sticky section nav, one full-width panel per concept; each panel = explanation + live lab. Tokens follow the coAI design system. */
 :root{
@@ -33,6 +34,9 @@ pre{background:var(--code);color:var(--codefg);padding:14px 16px;border-radius:1
 h1,h2,h3,h4{line-height:1.35;margin:0;text-wrap:balance}
 p{margin:0}
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--bd);margin:0 calc(-1*max(16px,env(safe-area-inset-left,0px)))}
+.top{display:flex;align-items:center;gap:8px}.top .nav{flex:1;min-width:0}
+.themebtn{flex:none;margin-inline-end:max(16px,env(safe-area-inset-right,0px));border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:14px;font-weight:600;padding:6px 14px;border-radius:9999px;cursor:pointer}
+.themebtn:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
 .nav{display:flex;gap:6px;overflow-x:auto;padding:10px max(16px,env(safe-area-inset-right,0px));scrollbar-width:thin}
 .nav button{flex:none;border:1px solid var(--bd);background:var(--card);color:var(--fg);font:inherit;font-size:14px;font-weight:500;padding:6px 14px;border-radius:9999px;cursor:pointer}
 .nav button.on{background:var(--pri);border-color:var(--pri);color:#fff}
@@ -90,7 +94,7 @@ table.t th{background:var(--muted);font-weight:600}
 <body>
 
 <div class="wrap" lang="en">
-<div class="top"><nav class="nav" id="nav" aria-label="Sections"></nav></div>
+<div class="top"><nav class="nav" id="nav" aria-label="Sections"></nav><button class="themebtn" id="themeBtn" type="button"></button></div>
 <section class="hero">
   <span class="eyebrow">coAI · DevOps AI assistant</span>
   <h1>Architecture Lab: how every part works</h1>
@@ -1056,6 +1060,14 @@ function run(){
 </script>
 <footer class="muted small" style="margin-top:56px;padding-top:16px;border-top:1px solid var(--bd)">Simulator logic comes from backend/app/services (workflow, chunker, textnorm, websearch, vectorstore, embeddings), api/chat.py, services/images.py, main.py, config.py and docker-compose.yml. The dashboard section uses sample data.</footer>
 </div>
+<script>
+(()=>{const root=document.documentElement,btn=document.getElementById('themeBtn'),mq=matchMedia('(prefers-color-scheme: dark)');
+const isDark=()=>root.dataset.theme?root.dataset.theme==='dark':mq.matches;
+const paint=()=>{const d=isDark();btn.textContent=d?'☀ Light mode':'🌙 Dark mode';btn.setAttribute('aria-label',d?'Switch to light mode':'Switch to dark mode');root.style.colorScheme=d?'dark':'light'};
+btn.onclick=()=>{const n=isDark()?'light':'dark';root.dataset.theme=n;try{localStorage.setItem('theme',n)}catch(e){}paint()};
+mq.addEventListener('change',()=>{if(!root.dataset.theme)paint()});paint();
+})();
+</script>
 <script>
 (()=>{const nav=document.getElementById('nav');
 SECTIONS.forEach(([id,t])=>{const b=document.createElement('button');b.textContent=t;b.dataset.id=id;b.onclick=()=>document.getElementById(id).scrollIntoView({behavior:'smooth',block:'start'});nav.append(b)});
