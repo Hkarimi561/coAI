@@ -2,6 +2,7 @@
 
     python -m app.cli create-admin --email admin@example.com --name "Admin" [--password ...]
     python -m app.cli ingest [--force]
+    python -m app.cli eval --dataset eval/questions.json [--retrieval-only | --sweep] [--web] [--judge] [--out report.json] [--baseline old.json]
 """
 
 import argparse
@@ -51,6 +52,15 @@ async def ingest(force: bool) -> int:
     return 1 if report.errors else 0
 
 
+async def evaluate(args: argparse.Namespace) -> int:
+    from app import evaluation  # imported lazily: the eval module pulls in the whole workflow
+
+    return await evaluation.run(
+        args.dataset, retrieval_only=args.retrieval_only, sweep=args.sweep, allow_web=args.web, use_judge=args.judge, out=args.out,
+        baseline=args.baseline, only=args.only,
+    )
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -60,8 +70,19 @@ async def main() -> int:
     a.add_argument("--password")
     i = sub.add_parser("ingest")
     i.add_argument("--force", action="store_true", help="re-index every file, even if unchanged")
+    e = sub.add_parser("eval", help="run a question set through the answer workflow and print quality metrics")
+    e.add_argument("--dataset", required=True, help="JSON file with the questions (see eval/README.md)")
+    e.add_argument("--retrieval-only", action="store_true", help="no LLM: report where each question would be answered from")
+    e.add_argument("--sweep", action="store_true", help="retrieval-only for a grid of DOC_SUFFICIENCY_SCORE values")
+    e.add_argument("--web", action="store_true", help="allow live web search (off by default so runs are repeatable)")
+    e.add_argument("--judge", action="store_true", help="ask the LLM to compare each answer with the question's reference answer")
+    e.add_argument("--out", help="write a JSON report here")
+    e.add_argument("--baseline", help="an earlier --out report to compare the summary with")
+    e.add_argument("--only", nargs="+", help="run only these question ids")
     args = parser.parse_args()
     try:
+        if args.cmd == "eval":
+            return await evaluate(args)
         return await create_admin(args.email, args.name, args.password) if args.cmd == "create-admin" else await ingest(args.force)
     finally:
         await engine.dispose()

@@ -123,6 +123,11 @@ For every user message the backend runs an explicit state machine (`backend/app/
 
 **Analytics** (*Admin → Dashboard*) are computed from the database: conversations & resolution rate, daily volume, source distribution (local docs / confirmed solutions / web cache / fresh web / Docker / CI), web searches performed vs avoided and cache hit rate, status split, and the top recurring error signatures. *Admin → Web cache* lists entries and lets you invalidate them manually.
 
+## Knowledge gaps and evaluation
+
+* *Admin → Knowledge gaps* clusters the questions the assistant could not answer well. **Draft runbook** on a topic asks the LLM for a runbook (`Symptoms / Root Cause / Resolution Steps / Verification`) from the recurring questions, the assistant's earlier answers and any confirmed solutions; the draft opens in the editor, is marked as unverified, and is only published (and indexed) when an admin approves it. Needs `gaps.view` and `documents.manage`.
+* `eval/` holds a question set and `python -m app.cli eval` runs it through the real workflow: share of answers from docs / solutions / web, expected-document hit rate, phrase checks, an optional LLM judge, `--retrieval-only` (no LLM) and `--sweep` (how `DOC_SUFFICIENCY_SCORE` trades docs against web). See [eval/README.md](eval/README.md).
+
 ## Admin settings (no restart needed)
 
 *Admin → Settings* switches, applied immediately: **live web search** (SearXNG/Tavily) on/off, **GitHub project docs** on/off, **chat answer cache** on/off. With web search off no request leaves the network except (if enabled) to GitHub; previously cached research is still used. The header and *System status* page show the current state.

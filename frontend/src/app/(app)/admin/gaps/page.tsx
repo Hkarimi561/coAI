@@ -1,17 +1,18 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, Download, Minus } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { ArrowDown, ArrowUp, Download, FileText, Minus } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
+import { DocumentEditor, type EditorTarget } from "@/components/admin/document-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select } from "@/components/ui/input";
 import { Empty, ErrorBanner, Spinner } from "@/components/ui/misc";
 import { api } from "@/lib/api";
-import type { GapReport } from "@/lib/types";
+import type { DraftResponse, GapReport } from "@/lib/types";
 import { formatDateTime, formatNumber, formatPercent } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
 
@@ -23,6 +24,28 @@ export default function GapsPage() {
   const [days, setDays] = useState(7);
   const report = useQuery({ queryKey: ["admin-gaps", days], queryFn: () => api.get<GapReport>(`/admin/gaps?days=${days}`) });
   const r = report.data;
+  const [editor, setEditor] = useState<EditorTarget | null>(null);
+  const [draftingIdx, setDraftingIdx] = useState<number | null>(null);
+  const [published, setPublished] = useState<string | null>(null);
+  const draft = useMutation({
+    mutationFn: (c: GapReport["clusters"][number]) =>
+      api.post<DraftResponse>("/admin/gaps/draft", {
+        title: c.title,
+        queries: c.examples.map((e) => e.query),
+        conversation_ids: [...new Set(c.examples.map((e) => e.conversation_id))],
+      }),
+    onSuccess: (d) => {
+      setPublished(null);
+      setEditor({
+        path: d.suggested_path,
+        content: d.markdown,
+        note: d.generated_by_llm
+          ? t("پیش‌نویس از روی سؤال‌های تکراری و پاسخ‌های قبلی ساخته شد. هیچ‌کدام تأیید نشده‌اند؛ پیش از انتشار همهٔ دستورها و علت ریشه‌ای را بررسی کنید.")
+          : t("مدل زبانی در دسترس نبود یا خروجی معتبر نداشت؛ قالب پایه ساخته شد. بخش‌ها را تکمیل کنید."),
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    },
+  });
   const delta = r ? r.gap_rate - r.previous.gap_rate : 0;
 
   return (
@@ -46,6 +69,23 @@ export default function GapsPage() {
       </p>
 
       <ErrorBanner error={report.error} />
+      <ErrorBanner error={draft.error} />
+      {published ? (
+        <p className="rounded-md bg-success/10 p-2 text-sm text-success">
+          {t("مستند منتشر و ایندکس شد:")} <span dir="ltr">{published}</span>
+        </p>
+      ) : null}
+      {editor ? (
+        <DocumentEditor
+          target={editor}
+          onCancel={() => setEditor(null)}
+          onDone={(doc) => {
+            setEditor(null);
+            setPublished(doc.path);
+            void report.refetch();
+          }}
+        />
+      ) : null}
       {report.isLoading ? <Spinner className="mx-auto" /> : null}
 
       {r ? (
@@ -91,6 +131,16 @@ export default function GapsPage() {
                     {c.title}
                   </div>
                   <Badge tone="neutral">{formatNumber(c.count)} {t("بار")}</Badge>
+                  <Button
+                    variant="outline"
+                    disabled={draft.isPending}
+                    onClick={() => {
+                      setDraftingIdx(i);
+                      draft.mutate(c);
+                    }}
+                  >
+                    {draft.isPending && draftingIdx === i ? <Spinner /> : <FileText className="h-4 w-4" />} {t("پیش‌نویس مستند")}
+                  </Button>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(Object.keys(KIND_LABEL) as (keyof typeof KIND_LABEL)[])

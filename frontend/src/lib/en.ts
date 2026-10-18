@@ -486,4 +486,7 @@ export const EN: Record<string, string> = {
   "سطح دسترسی": "Access level",
   "افزودن الگو / کانتینر": "Add pattern / container",
   "ابزارها:": "Tools:",
+  "پیش‌نویس از روی سؤال‌های تکراری و پاسخ‌های قبلی ساخته شد. هیچ‌کدام تأیید نشده‌اند؛ پیش از انتشار همهٔ دستورها و علت ریشه‌ای را بررسی کنید.": "The draft was written from the recurring questions and earlier answers. None of it is verified; check every command and the root cause before publishing.",
+  "مستند منتشر و ایندکس شد:": "Document published and indexed:",
+  "پیش‌نویس مستند": "Draft runbook",
 };

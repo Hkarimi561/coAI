@@ -1,0 +1,92 @@
+{
+  "_comment": "Starter set built from the sample runbooks in docs/. Replace/extend with real questions from your team: the numbers only mean something on questions you actually care about.",
+  "questions": [
+    {
+      "id": "nginx-port-in-use",
+      "question": "nginx fails to start: bind() to 0.0.0.0:80 failed (98: Address already in use)",
+      "expect_docs": ["nginx-restart-and-reload"],
+      "must_contain_any": ["ss -ltnp", "lsof", "port 80"],
+      "expected_stage": "local_docs",
+      "reference": "Another process owns port 80. Find it with ss -ltnp | grep ':80 ', stop it or change the port, then test with nginx -t and restart."
+    },
+    {
+      "id": "nginx-reload-vs-restart",
+      "question": "When should I use reload instead of restart for nginx after a config change?",
+      "expect_docs": ["nginx-restart-and-reload"],
+      "must_contain_all": ["nginx -t", "reload"],
+      "expected_stage": "local_docs",
+      "reference": "Validate with nginx -t, then reload to apply the change without dropping connections; restart only if the master process is stuck."
+    },
+    {
+      "id": "nginx-502",
+      "question": "nginx returns 502 Bad Gateway: connect() failed (111: Connection refused) while connecting to upstream",
+      "expect_docs": ["nginx-restart-and-reload"],
+      "must_contain_any": ["upstream", "proxy_pass"],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "docker-exit-137",
+      "question": "my container keeps restarting with exit code 137",
+      "expect_docs": ["docker-container-crashloop"],
+      "must_contain_any": ["OOM", "memory"],
+      "expected_stage": "local_docs",
+      "reference": "Exit 137 is SIGKILL, usually out of memory (OOMKilled=true). Check docker inspect, raise the memory limit or fix the leak."
+    },
+    {
+      "id": "docker-dependency-not-ready",
+      "question": "container crashes right after start with connection refused to the database",
+      "expect_docs": ["docker-container-crashloop"],
+      "must_contain_any": ["depends_on", "healthcheck", "service_healthy"],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "postgres-too-many-clients",
+      "question": "FATAL: sorry, too many clients already",
+      "expect_docs": ["postgresql-connection-problems"],
+      "must_contain_any": ["max_connections", "pg_stat_activity", "pool"],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "disk-full",
+      "question": "No space left on device on a docker host, how do I find what is using the disk?",
+      "expect_docs": ["disk-full-cleanup"],
+      "must_contain_all": ["df -h"],
+      "must_contain_any": ["docker system df", "du "],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "disk-full-fa",
+      "question": "سرور خطای No space left on device می‌دهد، چطور بفهمم چه چیزی دیسک را پر کرده؟",
+      "expect_docs": ["disk-full-cleanup"],
+      "must_contain_any": ["df -h", "du "],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "rollback-fa",
+      "question": "دیپلوی جدید خطا داده، چطور به نسخهٔ قبلی برگردم؟",
+      "expect_docs": ["deployment-rollback"],
+      "must_contain_any": ["docker compose up -d", "تگ"],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "ci-first-failing-step",
+      "question": "a CI build failed, where do I start triaging?",
+      "expect_docs": ["ci-build-failure-triage"],
+      "must_contain_any": ["first failing", "log"],
+      "expected_stage": "local_docs"
+    },
+    {
+      "id": "out-of-corpus-terraform",
+      "question": "terraform apply fails with Error acquiring the state lock, how do I release it safely?",
+      "expected_stage": "web",
+      "must_contain_any": ["force-unlock"],
+      "reference": "Check that no other apply is running, then terraform force-unlock <LOCK_ID>."
+    },
+    {
+      "id": "smalltalk",
+      "question": "hello, who are you?",
+      "expected_stage": "any",
+      "must_not_contain": ["I cannot help"]
+    }
+  ]
+}

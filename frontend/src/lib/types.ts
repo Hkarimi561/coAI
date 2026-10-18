@@ -191,6 +191,8 @@ export interface DraftResponse {
   suggested_path: string;
   solution_id: string | null;
   generated_by_llm: boolean;
+  /** only for drafts written from a knowledge-gap topic */
+  based_on?: { questions: number; conversations: number };
 }
 
 export interface DocumentRow {

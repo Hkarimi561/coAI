@@ -242,6 +242,21 @@ async def knowledge_gaps_export(days: int = Query(default=7, ge=1, le=90), sessi
     return Response(gaps_svc.to_markdown(report), media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+class GapDraftIn(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    queries: list[str] = Field(min_length=1, max_length=8)
+    conversation_ids: list[uuid.UUID] = Field(default_factory=list, max_length=8)
+
+
+@router.post("/gaps/draft", dependencies=[Depends(require_permission("gaps.view")), Depends(require_permission("documents.manage"))])
+async def knowledge_gap_draft(body: GapDraftIn, session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """Drafts a runbook for one recurring gap topic. Nothing is saved: the admin edits and publishes it with POST /admin/documents."""
+    try:
+        return await gaps_svc.draft_runbook(session, body.title, body.queries, body.conversation_ids)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 # ---------------------------------------------------------------- dashboard overview (sidebar badges + home cards)
 @router.get("/overview", dependencies=[Depends(require_any_permission)])
 async def admin_overview(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
