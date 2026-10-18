@@ -752,7 +752,7 @@ user_roles:[230,20,'pri','user ↔ role','Many-to-many link table: a user can ho
 roles:[450,20,'pri','roles','System roles (such as admin, which always holds every permission) and custom roles created by admins.'],
 role_permissions:[670,20,'pri','role permissions','Each role is a set of keys from <code>permissions.py</code>, e.g. documents.manage or lessons.review.'],
 role_container_grants:[890,20,'pri','role container grants','A name pattern (exact or glob such as api-*) plus a level, logs or actions, for each role.'],
-container_grants:[10,190,'pri','user container grants','Direct access of one user to one container. Without a grant the container is not visible at all.'],
+container_grants:[10,190,'pri','legacy user grants','Legacy per-user grants. They are ignored now: container access comes only from role_container_grants (see the RBAC section).'],
 container_audit:[230,190,'pri','action audit','Every start/stop/restart attempt, including denied ones, with user and time.'],
 app_settings:[450,190,'web','live settings','Key/value: web search on/off, GitHub docs, answer cache, and the knowledge-version counter that invalidates cached answers.'],
 mcp_servers:[670,190,'web','MCP servers','Name, URL, transport, headers, allowed tools (enabled_tools) and forward_user.'],
@@ -792,8 +792,333 @@ function pick(n){
 pick('conversations');
 })();
 </script>
+<section class="sec" id="mem">
+<header><span class="eyebrow">8 · Session memory</span><h2>How a conversation remembers what happened</h2>
+<p>Each conversation keeps a small memory in <code>Conversation.state</code>: the problem, a timeline of turns with their outcome, a rolling summary written by the LLM in the background and a suggested next step. It is injected into the prompt as <code>&lt;session_memory&gt;</code> and it changes how the next search query is built. The simulator ports <code>memory.py</code> and the query logic of <code>plan_queries</code>.</p></header>
+<div class="grid g2" style="align-items:start">
+ <div class="card" style="display:grid;gap:12px">
+  <h3 style="font-size:18px">1 · Send a turn</h3>
+  <textarea id="mmMsg" class="code" style="min-height:90px" spellcheck="false"></textarea>
+  <div class="row"><button class="btn" data-m="err">Paste an error log</button><button class="btn" data-m="follow">Short follow-up</button><button class="btn" data-m="chat">Plain question</button></div>
+  <div class="row"><label class="f">Answer source <select id="mmSrc" style="width:auto"><option>local_docs</option><option>solutions</option><option>web_fresh</option><option>none</option></select></label><label class="f"><input type="checkbox" id="mmAwait" checked> the answer proposes a fix (awaiting feedback)</label></div>
+  <div class="row"><button class="btn p" id="mmSend">Send turn</button><button class="btn" id="mmOk" disabled>User: “Solved”</button><button class="btn" id="mmFail" disabled>User: “It failed”</button><button class="btn" id="mmReset">Reset</button></div>
+  <div class="note" id="mmQ"></div>
+ </div>
+ <div style="display:grid;gap:14px;min-width:0">
+  <div class="card"><h3 style="font-size:18px;margin-bottom:8px">2 · Timeline (max 12 entries)</h3><div id="mmTl" style="display:grid;gap:8px"></div></div>
+  <div class="card"><div class="row" style="justify-content:space-between"><h3 style="font-size:18px">Rolling summary</h3><span id="mmUpd" class="tag"></span></div><p id="mmSum" class="small muted" style="margin-top:6px"></p><p class="small" style="margin-top:6px"><b>Next step:</b> <span id="mmNext"></span></p></div>
+ </div>
+</div>
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">What the model receives (<code>memory.render()</code>)</h3><pre id="mmRender" style="max-height:300px;white-space:pre-wrap;text-align:left"></pre></div>
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Stored state (<code>Conversation.state</code>)</h3><pre id="mmJson" style="max-height:300px"></pre></div>
+</div>
+<div class="grid g3" style="margin-top:16px">
+ <div class="card"><h4>Deterministic part</h4><p class="small muted">One timeline entry is added per assistant turn. Text is shortened (user 160, assistant 240, problem 300 chars). Outcome is <code>pending</code> while it waits for the user, then <code>confirmed</code>, <code>rejected</code> or <code>info</code>.</p></div>
+ <div class="card"><h4>LLM part (background)</h4><p class="small muted">After each answer a background task asks the LLM for <code>{summary ≤ 500 chars, next_step ≤ 160}</code>, redacts it and saves it. The <code>updating</code> flag is always cleared, even on failure. The LLM’s next step is applied only while the last outcome is still <code>pending</code> or <code>info</code>.</p></div>
+ <div class="card"><h4>Failed attempts</h4><p class="small muted">“It failed” raises <code>attempts</code>, adds the answer’s sources to <code>rejected_refs</code> (excluded from later searches in this conversation) and keeps a short summary of the failed answer so the next prompt does not repeat it.</p></div>
+</div>
+</section>
+<script>
+addSection('mem','Session memory');
+(()=>{
+const MAXT=12,ERR=/\b(?:error|err|fail(?:ed|ure|s)?|exception|fatal|panic|denied|refused|cannot|can't|unable|not found|timeout|timed out|traceback|oom|killed|unhealthy|crash(?:ed|loop)?|errno|no such|permission|unreachable|bad gateway|502|503|504)\b/i;
+const short=(t,n)=>{t=(t||'').replace(/\s+/g,' ').trim();return t.length<=n?t:t.slice(0,n-1)+'…'};
+const NEXT={await:'Run the suggestion above and report the result with “Solved” or “It failed”.',need:'Send more information: the full error text or the output of `docker logs --tail 100 <container>`.',rejected:'Paste the new error or output so the search can run again with fresh information, without repeating failed solutions.',confirmed:'The problem is solved. Ask anything else; an admin can promote this solution to the documentation.'};
+const MSG={err:'2025-10-01T12:03:44Z ERROR connect() failed (111: Connection refused) while connecting to upstream 10.0.3.17:8080\nnginx container keeps restarting',follow:'and now what?',chat:'How do I check which port nginx is listening on?'};
+let mem,convo;
+function reset(){mem=null;convo={attempts:0,rejected_refs:[],original_problem:'',failed_summaries:[]};$('#mmMsg').value=MSG.err;draw()}
+function addTurn(m,{problem,user,assistant,source,awaiting}){m=Object.assign({},m||{});const tl=[...(m.timeline||[])];tl.push({n:tl.length?tl[tl.length-1].n+1:1,user:short(user,160),assistant:short(assistant,240),source,outcome:awaiting?'pending':'info'});
+ return Object.assign(m,{problem:short(problem,300),timeline:tl.slice(-MAXT),next_step:awaiting?NEXT.await:NEXT.need,updating:true})}
+function setOutcome(m,o){m=Object.assign({},m);const tl=(m.timeline||[]).map(t=>({...t}));for(let i=tl.length-1;i>=0;i--)if(tl[i].outcome==='pending'){tl[i].outcome=o;break}return Object.assign(m,{timeline:tl,next_step:o==='confirmed'?NEXT.confirmed:NEXT.rejected})}
+function render(m){if(!m||!(m.timeline||[]).length)return'(empty: nothing is injected into the prompt)';const L=[`Current problem: ${m.problem||''}`];if(m.summary)L.push(`Summary so far: ${m.summary}`);L.push('What happened (oldest first):');m.timeline.slice(-8).forEach(t=>L.push(`${t.n}. user: ${t.user} | assistant (${t.source}): ${t.assistant} | result: ${t.outcome}`));if(m.next_step)L.push(`Suggested next step: ${m.next_step}`);return '<session_memory>\n'+L.join('\n')+'\n</session_memory>'}
+function query(msg){
+ const isErr=ERR.test(msg),sig=msg.split('\n').filter(l=>ERR.test(l)).map(l=>l.trim().toLowerCase().replace(/\d{4}-\d\d-\d\dt[\d:.]+z?/g,'<ts>').replace(/\b\d{1,3}(\.\d{1,3}){3}(:\d+)?\b/g,'<ip>')).join(' | ')||msg.toLowerCase();
+ const followup=!!(mem&&(mem.timeline||[]).length)&&!isErr&&msg.length<80;
+ let q,why;
+ if(convo.attempts>0&&convo.original_problem){q=`${short(convo.original_problem,300)}\n${sig}`;why='attempts > 0: the original problem + the new signature'}
+ else if(isErr){q=sig+(msg.length<300?'\n'+msg.slice(0,200):'');why='error text: the normalized signature (+ the message when short)'}
+ else q=msg.slice(0,600),why='plain question: the message itself';
+ if(followup&&mem.problem){q=`${mem.problem}\n${msg}`;why='short follow-up: the remembered problem + the message'}
+ return{q:q.slice(0,900),why}}
+function draw(){
+ const msg=$('#mmMsg').value;const r=query(msg);
+ $('#mmQ').innerHTML=`<b>Semantic query for the next search</b> (<code>plan_queries</code>): ${esc(r.why)}<pre style="margin-top:6px;white-space:pre-wrap;font-size:12px">${esc(r.q)}</pre>`;
+ const tl=$('#mmTl');tl.innerHTML='';
+ if(!mem||!(mem.timeline||[]).length)tl.append(H('div',{class:'muted small',html:'No turns yet.'}));
+ else mem.timeline.forEach(t=>tl.append(H('div',{class:'step',style:'padding:8px 12px',html:`<div class="row" style="justify-content:space-between"><b>#${t.n} · ${esc(t.source)}</b><span class="tag ${t.outcome==='confirmed'?'ok':t.outcome==='rejected'?'bad':t.outcome==='pending'?'warn':''}">${t.outcome}</span></div><div class="small"><b>user:</b> ${esc(t.user)}</div><div class="small muted"><b>assistant:</b> ${esc(t.assistant)}</div>`})));
+ $('#mmUpd').textContent=mem?(mem.updating?'updating in background…':'up to date'):'—';$('#mmUpd').className='tag '+(mem&&mem.updating?'warn':'ok');
+ $('#mmSum').textContent=mem&&mem.summary?mem.summary:'(not written yet)';$('#mmNext').textContent=mem?mem.next_step:'—';
+ $('#mmRender').textContent=render(mem);
+ $('#mmJson').textContent=JSON.stringify({memory:mem||null,attempts:convo.attempts,rejected_refs:convo.rejected_refs,failed_summaries:convo.failed_summaries},null,2);
+ const pend=mem&&(mem.timeline||[]).some(t=>t.outcome==='pending');$('#mmOk').disabled=!pend;$('#mmFail').disabled=!pend;
+}
+$$('[data-m]').forEach(b=>b.onclick=()=>{$('#mmMsg').value=MSG[b.dataset.m];draw()});
+$('#mmMsg').oninput=draw;
+$('#mmSend').onclick=()=>{const user=$('#mmMsg').value.trim();if(!user)return;if(!convo.original_problem)convo.original_problem=short(user,300);
+ const src=$('#mmSrc').value,aw=$('#mmAwait').checked;
+ mem=addTurn(mem,{problem:convo.original_problem,user,assistant:aw?`Suggested a fix from ${src}: check the service status, then restart it.`:'I need the full error text or the container logs to continue.',source:src,awaiting:aw});draw();
+ const id=++tick;setTimeout(()=>{if(id!==tick||!mem)return;mem.summary=short(`Problem: ${convo.original_problem}. ${mem.timeline.length} turn(s) so far; latest outcome: ${mem.timeline[mem.timeline.length-1].outcome}.`,500)+' (illustrative text; the real summary is written by the LLM)';mem.updating=false;const last=mem.timeline[mem.timeline.length-1];if(last.outcome==='pending'||last.outcome==='info')mem.next_step=short(mem.next_step,160);draw()},1400)};
+let tick=0;
+$('#mmOk').onclick=()=>{mem=setOutcome(mem,'confirmed');draw()};
+$('#mmFail').onclick=()=>{mem=setOutcome(mem,'rejected');convo.attempts++;convo.rejected_refs.push('doc:runbooks/nginx.md#2');convo.failed_summaries.push(short(mem.timeline[mem.timeline.length-1].assistant,120));draw()};
+$('#mmReset').onclick=reset;reset();
+})();
+</script>
+<section class="sec" id="les">
+<header><span class="eyebrow">9 · Lessons and skills</span><h2>Two ways to teach the assistant</h2>
+<p><b>Lessons</b> are taught by any team member and become knowledge only after an admin approves them (<code>lessons.py</code>). <b>Skills</b> are playbooks written by admins that are loaded into the system prompt when their description matches the question (<code>skills.py</code>).</p></header>
+
+<div class="card" style="display:grid;gap:14px">
+ <h3 style="font-size:18px">Lesson lifecycle</h3>
+ <div class="steps" id="lsFlow"></div>
+ <div class="row"><button class="btn p" id="lsSubmit">1 · User: submit for review</button><button class="btn" id="lsApprove" disabled>2a · Admin: approve</button><button class="btn" id="lsReject" disabled>2b · Admin: reject</button><button class="btn" id="lsRevoke" disabled>3 · Admin: reject an approved lesson</button><button class="btn" id="lsReset">Reset</button></div>
+ <div class="grid g3" id="lsState"></div>
+ <div id="lsNote" class="note"></div>
+</div>
+
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">What happens when a lesson is submitted</h3>
+  <ol class="tight small" style="padding-inline-start:22px">
+   <li>The conversation must be in <code>teach</code> mode and contain new user messages since the last submit (<code>teach_cursor</code>).</li>
+   <li>In teach mode the assistant does <b>no retrieval</b>: it restates the rule, asks 1 to 3 clarifying questions and says the lesson is not active yet.</li>
+   <li>On submit the LLM drafts JSON: <code>{title, applies_when, instruction}</code>. If that fails, the user’s own words become the instruction (deterministic fallback).</li>
+   <li>Everything is redacted, a <code>Lesson</code> row is stored and the conversation becomes <code>pending_review</code>.</li>
+   <li>Approval embeds <code>title + applies_when + instruction</code> (first 3000 chars) and upserts a Qdrant point with <code>kind=lesson</code>; then the knowledge version is bumped, which invalidates every cached answer.</li>
+   <li>Rejecting an approved lesson deletes its vector again.</li>
+  </ol></div>
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Where lessons are used</h3>
+  <p class="small muted">Stage 1 searches <code>kind in [doc, lesson]</code>, so lessons compete with documents on similarity. A lesson hit is cited as “lesson verified by an admin” and counts as <b>verified</b> confidence, like internal docs. The text reaches the model inside <code>&lt;untrusted_context&gt;</code> as data.</p></div>
+</div>
+
+<div class="card" style="margin-top:16px;display:grid;gap:14px">
+ <h3 style="font-size:18px">Skill matching lab</h3>
+ <p class="small muted">A skill is indexed from <code>name + description</code> (kind=skill). For a question, the top 2 skills are fetched; a skill is activated if its score is ≥ <code>SKILL_MIN_SCORE</code> (0.86) <b>and</b> within 0.03 of the best score. Move the scores to see the rule.</p>
+ <div class="grid g3" id="skCards"></div>
+ <div id="skOut" class="note"></div>
+ <pre id="skPrompt" style="max-height:200px"></pre>
+</div>
+
+<div class="card" style="margin-top:16px"><h3 style="font-size:18px;margin-bottom:8px">Knowledge types compared</h3>
+<div class="scroll"><table class="t"><tr><th></th><th>Document</th><th>Confirmed solution</th><th>Lesson</th><th>Skill</th></tr>
+<tr><td>Written by</td><td>admin / promoted</td><td>user (after “solved”)</td><td>any team member</td><td>admin</td></tr>
+<tr><td>Review</td><td>approved by admin</td><td>usable immediately, reviewed later</td><td>must be approved</td><td>admin-authored</td></tr>
+<tr><td>Qdrant kind</td><td>doc</td><td>solution</td><td>lesson</td><td>skill</td></tr>
+<tr><td>Searched in</td><td>stage 1</td><td>stage 2</td><td>stage 1</td><td>before stage 1 (own search)</td></tr>
+<tr><td>Reaches the model as</td><td>untrusted context</td><td>untrusted context</td><td>untrusted context</td><td><b>trusted system prompt</b> (“ACTIVE SKILLS”, ≤ 4000 chars each)</td></tr></table></div></div>
+</section>
+<script>
+addSection('les','Lessons and skills');
+(()=>{
+const ST=[['teach','Teaching chat','mode = teach'],['pending','Submitted','status = pending_review'],['approved','Approved','indexed in Qdrant'],['rejected','Rejected','not indexed']];
+const fl=$('#lsFlow');ST.forEach(([id,t,s])=>fl.append(H('div',{class:'step',id:'ls_'+id,html:`<b>${id}</b>${t}<div class="muted small">${s}</div>`})));
+let L,kb=1;
+function reset(){L={state:'teach',indexed:false};kb=1;ls()}
+function ls(){
+ ST.forEach(([id])=>{$('#ls_'+id).className='step'+(L.state===id?' on':'')});
+ $('#lsSubmit').disabled=L.state!=='teach';$('#lsApprove').disabled=L.state!=='pending';$('#lsReject').disabled=L.state!=='pending';$('#lsRevoke').disabled=L.state!=='approved';
+ $('#lsState').innerHTML=[['PostgreSQL · lessons',L.state==='teach'?'no row yet':'row: '+L.state,L.state==='approved'?'ok':'pri'],['Qdrant · kind=lesson',L.indexed?'1 point (searchable)':'no point','ok'.repeat(L.indexed?1:0)||'warn'],['Answer-cache version (KB)',String(kb)+(kb>1?' · cached answers invalidated':''),'pri']].map(([a,b,c])=>`<div class="card"><div class="small muted">${a}</div><b>${b}</b></div>`).join('');
+ $('#lsNote').innerHTML={teach:'The user is chatting in teach mode. Nothing is searchable yet.',pending:'The conversation is <code>pending_review</code>. The lesson is visible to admins only.',approved:'Approved: the lesson is embedded and upserted, and the knowledge version was bumped.',rejected:'Rejected: nothing was indexed.'}[L.state];
+}
+$('#lsSubmit').onclick=()=>{L.state='pending';ls()};
+$('#lsApprove').onclick=()=>{L.state='approved';L.indexed=true;kb++;ls()};
+$('#lsReject').onclick=()=>{L.state='rejected';ls()};
+$('#lsRevoke').onclick=()=>{L.state='rejected';L.indexed=false;kb++;ls()};
+$('#lsReset').onclick=reset;reset();
+// skills
+const SK=[['SSL certificate checks','How to check certificate expiry and renew with certbot',.91],['Disk cleanup playbook','Steps to free disk space on Docker hosts safely',.90],['Release rollback','How to roll back a failed deployment',.84]];
+const sc=$('#skCards');
+SK.forEach(([n,d,v],i)=>sc.append(H('div',{class:'card',id:'sk'+i,html:`<b>${n}</b><p class="small muted">${d}</p><label class="f" style="display:grid"><span>score: <b id="skv${i}"></b></span><input type="range" id="skr${i}" min="70" max="100" value="${Math.round(v*100)}"></label><div id="skt${i}" style="margin-top:6px"></div>`})));
+function sk(){const MIN=.86;const sc=SK.map((_,i)=>+$('#skr'+i).value/100);const order=sc.map((s,i)=>[s,i]).sort((a,b)=>b[0]-a[0]).slice(0,2);const best=order[0][0];
+ const on=order.filter(([s])=>s>=MIN&&s>=best-.03).map(x=>x[1]);
+ SK.forEach((_,i)=>{$('#skv'+i).textContent=sc[i].toFixed(2);const top2=order.some(x=>x[1]===i);$('#skt'+i).innerHTML=on.includes(i)?'<span class="tag ok">activated</span>':top2?`<span class="tag warn">${sc[i]<MIN?'below 0.86':'more than 0.03 below the best'}</span>`:'<span class="tag">not in top 2</span>';$('#sk'+i).style.outline=on.includes(i)?'2px solid var(--ok)':''});
+ $('#skOut').innerHTML=on.length?`${on.length} skill(s) activated: ${on.map(i=>'<b>'+SK[i][0]+'</b>').join(', ')}. They are added to the <b>system prompt</b> as trusted instructions.`:'No skill reached the threshold, so the system prompt stays unchanged.';
+ $('#skPrompt').textContent=on.length?'ACTIVE SKILLS (playbooks written by your admins - trusted; follow them when they apply to this question):\n\n'+on.map(i=>`### ${SK[i][0]}\n(${'instructions of the skill, up to 4000 chars'})`).join('\n\n'):'(system prompt without ACTIVE SKILLS)';}
+SK.forEach((_,i)=>$('#skr'+i).addEventListener('input',sk));sk();
+})();
+</script>
+<section class="sec" id="mcp">
+<header><span class="eyebrow">10 · MCP and slash commands</span><h2>Tools the model can call, and the commands that force them</h2>
+<p>MCP servers are registered by admins. Only tools on the allow-list are ever exposed. In free chat, tools that change state (<code>destructiveHint</code>) are hidden from the model; they run only when the user types <code>/server@tool …</code>, and then with that user’s own permissions. Logic from <code>mcp_client.py</code>, <code>mcp_command.py</code>, <code>workflow.py</code> and <code>docker_mcp.py</code>.</p></header>
+
+<div class="card" style="display:grid;gap:12px">
+ <h3 style="font-size:18px">Pipeline of an MCP tool</h3>
+ <div id="mcFlow" class="row" style="gap:6px"></div>
+</div>
+
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card" style="display:grid;gap:12px">
+  <h3 style="font-size:18px">Command lab</h3>
+  <input type="text" id="mcIn" class="ltr" style="text-align:left" spellcheck="false">
+  <div class="row"><button class="btn" data-c="how do I check nginx?">free chat</button><button class="btn" data-c="/docker list my containers">/docker …</button><button class="btn" data-c="/docker@container_logs show logs of api-1">/docker@container_logs …</button><button class="btn" data-c="/docker@restart_container restart api-1">/docker@restart_container …</button><button class="btn" data-c="/devops@ssl_cert_expiry check example.com">/devops@ssl_cert_expiry …</button><button class="btn" data-c="/nope hi">unknown server</button></div>
+  <div class="small muted">Admin allow-list (<code>enabled_tools</code>): toggle tools on or off.</div>
+  <div id="mcTools" style="display:grid;gap:4px"></div>
+ </div>
+ <div class="card" style="display:grid;gap:10px">
+  <h3 style="font-size:18px">Result</h3>
+  <div id="mcParse"></div>
+  <div id="mcOffer"></div>
+  <div id="mcNotes" style="display:grid;gap:6px"></div>
+ </div>
+</div>
+
+<div class="card" style="margin-top:16px;display:grid;gap:12px">
+ <div class="row" style="justify-content:space-between"><h3 style="font-size:18px">What <code>restart_container</code> checks, in order</h3><div class="row"><label class="f">User level <select id="rsLvl" style="width:auto"><option value="none">no grant</option><option value="logs">logs</option><option value="actions" selected>actions</option></select></label><label class="f">Container <select id="rsCt" style="width:auto"><option value="api-1">api-1</option><option value="devops-ai-backend-1">devops-ai-backend-1 (protected)</option></select></label><label class="f">Actions in last minute <input type="range" id="rsRate" min="0" max="12" value="2" style="width:100px"> <b id="rsRateV"></b></label></div></div>
+ <div id="rsSteps" class="steps"></div>
+ <div id="rsRes" class="note"></div>
+</div>
+
+<div class="grid g3" style="margin-top:16px">
+ <div class="card"><h4>Per-user identity</h4><p class="small muted">When <code>forward_user</code> is on, the backend sends a signed token in <code>X-Coai-User</code>. The MCP server decodes it and applies that user’s role grants itself. Calls without a valid token are refused.</p></div>
+ <div class="card"><h4>Limits</h4><p class="small muted">Discovery timeout 25 s, tool call timeout 45 s, result cut to 6000 chars, up to 4 tool rounds per answer. Tool results are redacted and wrapped as <code>&lt;untrusted_tool_result&gt;</code>.</p></div>
+ <div class="card"><h4>Provider note</h4><p class="small muted">Tools are offered to the model only when <code>LLM_PROVIDER</code> is not <code>ollama</code> (OpenAI-compatible servers support tool calling). A forced command uses <code>tool_choice="required"</code> for the first round.</p></div>
+</div>
+</section>
+<script>
+addSection('mcp','MCP');
+(()=>{
+const flow=[['Register','admin adds URL, transport (http/sse), headers, forward_user'],['Discover','list_tools (25 s, paginated); destructiveHint recorded'],['Allow-list','admin enables tools (enabled_tools)'],['Offer','alias server__tool, cached 10 s'],['Call','model or /command → execute() with user token'],['Result','redacted, ≤ 6000 chars, untrusted wrapper']];
+const fl=$('#mcFlow');flow.forEach(([a,b],i)=>{fl.append(H('div',{class:'step',style:'flex:1 1 140px',html:`<b>${i+1}</b>${a}<div class="muted small">${b}</div>`}));if(i<flow.length-1)fl.append(H('span',{class:'muted',html:'→'}))});
+const SRV={docker:[['list_containers',0],['container_status',0],['container_logs',0],['container_stats',0],['restart_container',1],['stop_container',1],['start_container',1]],devops:[['dns_lookup',0],['tcp_check',0],['http_check',0],['ssl_cert_expiry',0],['current_time',0]]};
+const on=new Set(Object.entries(SRV).flatMap(([s,t])=>t.map(x=>s+'/'+x[0])));
+const tl=$('#mcTools');Object.entries(SRV).forEach(([s,t])=>t.forEach(([n,d])=>{const l=H('label',{class:'f'});const i=H('input',{type:'checkbox'});i.checked=true;i.onchange=()=>{i.checked?on.add(s+'/'+n):on.delete(s+'/'+n);go()};l.append(i,H('code',{html:s+'/'+n}),d?H('span',{class:'tag bad',html:'destructive'}):H('span',{class:'tag ok',html:'read-only'}));tl.append(l)}));
+const CMD=/^\s*\/([A-Za-z0-9][A-Za-z0-9_-]{0,47})(?:@([A-Za-z0-9_.:-]{1,64}))?(?:\s+(.*))?$/s;
+const inp=$('#mcIn');inp.value='/docker@restart_container restart api-1';
+$$('[data-c]').forEach(b=>b.onclick=()=>{inp.value=b.dataset.c;go()});inp.oninput=go;
+function go(){
+ const m=inp.value.match(CMD);const cmd=m?{server:m[1].toLowerCase(),tool:m[2]||null,text:(m[3]||'').trim()}:null;
+ const all=Object.entries(SRV).flatMap(([s,t])=>t.map(([n,d])=>({s,n,d})).filter(x=>on.has(x.s+'/'+x.n)));
+ let offered,notes=[];
+ $('#mcParse').innerHTML=cmd?`Parsed command: server <code>${esc(cmd.server)}</code>${cmd.tool?`, tool <code>${esc(cmd.tool)}</code>`:' (no tool: the model picks the best tool of that server)'}, request “${esc(cmd.text)}”`:'<span class="tag">free chat</span> no command: normal pipeline (docs → cache → web), the model may call tools.';
+ if(cmd){
+  if(!SRV[cmd.server]){offered=[];notes.push(['bad','Unknown server: nothing is offered.'])}
+  else{offered=all.filter(x=>x.s===cmd.server&&(!cmd.tool||x.n===cmd.tool));if(!offered.length)notes.push(['bad','That tool is not on the allow-list (or does not exist): nothing is offered.']);
+   notes.push(['ok','tool_choice = "required" in the first round: the model must call a tool.']);
+   notes.push(['pri','Answer cache is off and local-docs retrieval is skipped for this turn (live data must never be replayed).']);
+   notes.push(['warn','If no tool call actually happens, the answer is replaced by a warning that nothing was executed.']);}
+ }else{
+  offered=all.filter(x=>!x.d);const hidden=all.filter(x=>x.d);
+  if(hidden.length)notes.push(['warn',`Hidden from free chat: ${hidden.map(x=>x.s+'/'+x.n).join(', ')}. The model is told to ask the user to type e.g. /${hidden[0].s}@${hidden[0].n} <name>.`]);
+ }
+ $('#mcOffer').innerHTML=`<b>Tools offered to the model (${offered.length}):</b><div class="row" style="margin-top:6px">${offered.map(x=>`<span class="tag ${x.d?'bad':'ok'}">${x.s}__${x.n}</span>`).join('')||'<span class="muted small">none</span>'}</div>`;
+ $('#mcNotes').innerHTML=notes.map(([c,t])=>`<div><span class="tag ${c}">note</span> ${esc(t)}</div>`).join('');
+}
+go();
+// restart pipeline
+const RS=[['Identity','x-coai-user token decoded; user must exist and be active'],['Level','access_map: needs “actions” on this container'],['Protected?','platform core containers can never be restarted from chat'],['Rate limit','10 actions per minute per user (cact:{uid})'],['Docker call','proxy must have ALLOW_RESTARTS enabled'],['Audit','row in container_audit for every attempt']];
+const rs=$('#rsSteps');RS.forEach(([a,b],i)=>rs.append(H('div',{class:'step',id:'rs'+i,html:`<b>${i+1}</b>${a}<div class="muted small">${b}</div>`})));
+function rsGo(){const lv=$('#rsLvl').value,ct=$('#rsCt').value,rate=+$('#rsRate').value;$('#rsRateV').textContent=rate;
+ let stop=-1,msg='';
+ if(lv!=='actions'){stop=1;msg=lv==='logs'?`You may view '${ct}' but you do not have permission to run actions on it.`:`Container '${ct}' was not found or you have no access to it.`}
+ else if(ct.includes('backend')){stop=2;msg=`'${ct}' is a protected core container of this platform; it cannot be restarted from chat.`}
+ else if(rate>=10){stop=3;msg='Too many container actions, try again in a minute.'}
+ RS.forEach((_,i)=>{$('#rs'+i).className='step'+(stop===-1?' done':i<stop?' done':i===stop?' on':' skip')});
+ $('#rsRes').innerHTML=stop===-1?'<b>Allowed.</b> The proxy performs the restart (only if DOCKER_PROXY_ALLOW_ACTIONS=1) and “OK: container restart completed.” is audited.':`<b>Denied at step ${stop+1}.</b> ${esc(msg)} ${stop<=2?'The attempt is written to the audit log as denied.':''}`}
+['rsLvl','rsCt','rsRate'].forEach(i=>$('#'+i).addEventListener('input',rsGo));rsGo();
+})();
+</script>
+<section class="sec" id="rbac">
+<header><span class="eyebrow">11 · Roles and permissions</span><h2>RBAC: from roles to what a user can do</h2>
+<p>Users have many roles; roles hold many permission keys (data), while the keys themselves live in code (<code>permissions.py</code>). A user’s permissions are the <b>union</b> of their roles. Container access is separate: it comes from per-role grants, with glob patterns, inside the global allow-list. Logic from <code>models.py</code>, <code>security.py</code> and <code>container_access.py</code>.</p></header>
+<div class="grid g2" style="align-items:start">
+ <div class="card" style="display:grid;gap:12px">
+  <h3 style="font-size:18px">1 · Pick a user’s roles</h3>
+  <div class="row" id="rbRoles"></div>
+  <div class="small muted" id="rbRoleInfo"></div>
+  <h3 style="font-size:16px;margin-top:6px">Permission catalog</h3>
+  <div class="scroll"><table class="t" id="rbCat"></table></div>
+ </div>
+ <div style="display:grid;gap:14px;min-width:0">
+  <div class="card"><h3 style="font-size:18px;margin-bottom:8px">2 · Admin pages this user can open</h3><div id="rbPages" class="row"></div><p class="small muted" style="margin-top:8px">Every admin route is guarded on the server by <code>require_permission(key)</code> (403 otherwise). <code>require_any_permission</code> lets anyone with at least one permission into the admin area.</p></div>
+  <div class="card"><h3 style="font-size:18px;margin-bottom:8px">3 · Container access</h3>
+   <div class="small muted" style="margin-bottom:8px">Allow-list: <code>nginx, api-*, db</code>. Level = highest of: floor from <code>containers.logs_all</code>/<code>actions_all</code>, and the role grants whose pattern matches (<code>fnmatch</code>).</div>
+   <div class="scroll"><table class="t" id="rbCt"></table></div></div>
+ </div>
+</div>
+<div class="card" style="margin-top:16px"><h3 style="font-size:18px;margin-bottom:8px">Role grants used in this lab</h3><div class="scroll"><table class="t" id="rbGr"></table></div></div>
+</section>
+<script>
+addSection('rbac','RBAC');
+(()=>{
+const CAT=[['system.view','Overview','View system status'],['analytics.view','Overview','View stats and analytics'],['documents.manage','Knowledge','Manage documents'],['skills.manage','Knowledge','Manage skills'],['lessons.review','Knowledge','Review and approve lessons'],['gaps.view','Knowledge','View knowledge gaps'],['cache.manage','Knowledge','Manage the web-search cache'],['mcp.manage','Tools and access','Manage MCP servers'],['containers.logs_all','Tools and access','View logs and state of all containers'],['containers.actions_all','Tools and access','Run start/stop/restart on all containers'],['containers.manage_access','Tools and access','Set container access, view the action audit'],['conversations.view_all','Conversations','View every user’s conversations'],['conversations.manage','Conversations','Review conversations (status, promote, reject)'],['users.manage','Administration','Manage users and role assignment'],['roles.manage','Administration','Manage roles and permissions'],['settings.manage','Administration','Change system settings']];
+const ALL=CAT.map(c=>c[0]);
+const ROLES={
+ admin:{d:'system role: always holds every permission; cannot be edited or deleted',p:ALL,g:[]},
+ user:{d:'system role: given to new users by default; permissions are editable',p:[],g:[]},
+ reviewer:{d:'custom: reviews knowledge',p:['lessons.review','gaps.view','skills.manage','documents.manage'],g:[]},
+ 'api-operator':{d:'custom: runs the API containers',p:[],g:[['api-*','actions'],['nginx','logs']]},
+ dba:{d:'custom: database owner',p:['analytics.view'],g:[['db','actions']]},
+ 'log-viewer':{d:'custom: read-only everywhere',p:['containers.logs_all'],g:[]}};
+const PAGES=[['Dashboard','analytics.view'],['System status','system.view'],['Documents','documents.manage'],['Skills','skills.manage'],['Lessons','lessons.review'],['Knowledge gaps','gaps.view'],['Web cache','cache.manage'],['MCP servers','mcp.manage'],['Container access','containers.manage_access'],['All conversations','conversations.view_all'],['Conversation review','conversations.manage'],['Users','users.manage'],['Roles','roles.manage'],['Settings','settings.manage']];
+const CTS=['nginx','api-1','api-2','db','worker'],ALLOW=['nginx','api-*','db'];
+const fnm=(n,p)=>new RegExp('^'+p.replace(/[.+^${}()|\\]/g,'\\$&').replace(/\*/g,'.*').replace(/\?/g,'.')+'$').test(n);
+const RANK={none:0,logs:1,actions:2};
+const sel=new Set(['user','api-operator']);
+const rr=$('#rbRoles');Object.keys(ROLES).forEach(r=>{const l=H('label',{class:'f'});const i=H('input',{type:'checkbox'});i.checked=sel.has(r);i.onchange=()=>{i.checked?sel.add(r):sel.delete(r);go()};l.append(i,H('span',{class:'tag pri',html:r}));rr.append(l)});
+const gr=$('#rbGr');gr.innerHTML='<tr><th>Role</th><th>Description</th><th>Permissions</th><th>Container grants</th></tr>'+Object.entries(ROLES).map(([r,v])=>`<tr><td><code>${r}</code></td><td>${v.d}</td><td class="small">${v.p.length===ALL.length?'all 16':v.p.join(', ')||'—'}</td><td class="small">${v.g.map(([p,l])=>`<code>${p}</code> → ${l}`).join('<br>')||'—'}</td></tr>`).join('');
+function go(){
+ const roles=[...sel].map(r=>ROLES[r]);const perms=new Set(roles.flatMap(r=>r.p));
+ $('#rbRoleInfo').innerHTML=sel.size?`Effective permissions (union): <b>${perms.size}</b> of ${ALL.length}`:'No roles: the user holds no permission.';
+ $('#rbCat').innerHTML='<tr><th>Key</th><th>Group</th><th>Granted</th></tr>'+CAT.map(([k,g,l])=>`<tr><td><code>${k}</code><div class="small muted">${l}</div></td><td>${g}</td><td>${perms.has(k)?'<span class="tag ok">yes</span>':'<span class="tag">no</span>'}</td></tr>`).join('');
+ $('#rbPages').innerHTML=perms.size?PAGES.map(([n,k])=>`<span class="tag ${perms.has(k)?'ok':''}" style="${perms.has(k)?'':'opacity:.45'}">${n}</span>`).join(''):'<span class="tag bad">no admin area (403)</span>';
+ const floor=perms.has('containers.actions_all')?'actions':perms.has('containers.logs_all')?'logs':'none';
+ const grants=[...sel].flatMap(r=>ROLES[r].g.map(([p,l])=>({r,p,l})));
+ $('#rbCt').innerHTML='<tr><th>Container</th><th>Level</th><th>Why</th></tr>'+CTS.map(n=>{
+  const allowed=ALLOW.some(p=>fnm(n,p));if(!allowed)return`<tr><td><code>${n}</code></td><td><span class="tag bad">none</span></td><td class="small">outside DOCKER_ALLOWED_CONTAINERS: nobody can reach it</td></tr>`;
+  let best='none',why=[];if(floor!=='none'){best=floor;why.push(`permission floor: containers.${floor}_all`)}
+  grants.forEach(g=>{if(fnm(n,g.p)){why.push(`${g.r}: <code>${g.p}</code> → ${g.l}`);if(RANK[g.l]>RANK[best])best=g.l}});
+  if(floor==='actions')return`<tr><td><code>${n}</code></td><td><span class="tag ok">actions</span></td><td class="small">${why[0]}</td></tr>`;
+  return`<tr><td><code>${n}</code></td><td><span class="tag ${best==='actions'?'warn':best==='logs'?'pri':'bad'}">${best}</span></td><td class="small">${why.join('<br>')||'no grant → the container is invisible, also to the assistant'}</td></tr>`}).join('');
+}
+go();
+})();
+</script>
+<section class="sec" id="red">
+<header><span class="eyebrow">12 · Redaction</span><h2>Secrets are removed before they go anywhere</h2>
+<p><code>redaction.py</code> applies an ordered list of regular expressions to text. It runs on user input before storage, on container logs and CI output before they reach the LLM or the database, on web queries before they leave the network, and on web snippets, model output, lesson drafts and memory summaries before storage. Paste text below to see exactly what is replaced. Sample values are public documentation examples.</p></header>
+<div class="grid g2" style="align-items:start">
+ <div class="card" style="display:grid;gap:8px"><b>Input</b><textarea id="rdIn" class="code" style="min-height:300px" spellcheck="false"></textarea></div>
+ <div class="card" style="display:grid;gap:8px"><b>Output of <code>redact()</code></b><pre id="rdOut" style="min-height:300px;white-space:pre-wrap;word-break:break-all"></pre></div>
+</div>
+<div class="grid g2" style="margin-top:16px;align-items:start">
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Rules in order (matches in this input)</h3><div class="scroll"><table class="t" id="rdRules"></table></div></div>
+ <div class="card"><h3 style="font-size:18px;margin-bottom:8px">Where it is applied</h3>
+  <div id="rdWhere" style="display:grid;gap:8px"></div></div>
+</div>
+</section>
+<script>
+addSection('red','Redaction');
+(()=>{
+const K='(?:password|passwd|pwd|passphrase|secret|token|api[_\\-]?key|apikey|access[_\\-]?key|private[_\\-]?key|client[_\\-]?secret|credentials?|auth)';
+const P=[['private key block',/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,'[REDACTED_PRIVATE_KEY]'],
+['Authorization header',/(\bauthorization\s*[:=]\s*)(?:bearer|basic|token)\s+[^\s"']{6,}/gi,'$1[REDACTED]'],
+['Bearer token',/\bbearer\s+[A-Za-z0-9._~+/=\-]{12,}/gi,'Bearer [REDACTED]'],
+['JWT',/\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b/g,'[REDACTED_JWT]'],
+['AWS access key',/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g,'[REDACTED_AWS_KEY]'],
+['GitHub token (gh*_)',/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g,'[REDACTED_GITHUB_TOKEN]'],
+['GitHub fine-grained token',/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,'[REDACTED_GITHUB_TOKEN]'],
+['GitLab token',/\bglpat-[A-Za-z0-9_\-]{16,}\b/g,'[REDACTED_GITLAB_TOKEN]'],
+['Slack token',/\bxox[abprs]-[A-Za-z0-9\-]{10,}\b/g,'[REDACTED_SLACK_TOKEN]'],
+['sk- API key',/\bsk-[A-Za-z0-9_\-]{16,}\b/g,'[REDACTED_API_KEY]'],
+['Tavily key',/\btvly-[A-Za-z0-9_\-]{10,}\b/g,'[REDACTED_API_KEY]'],
+['URL credentials',/(\b[a-zA-Z][a-zA-Z0-9+.\-]*:\/\/)([^/\s:@]+):([^/\s@]+)@/g,'$1$2:[REDACTED]@'],
+['JSON secret',new RegExp('("[\\w.\\-]*'+K+'[\\w.\\-]*"\\s*:\\s*)"[^"]*"','gi'),'$1"[REDACTED]"'],
+['KEY=value assignment',new RegExp('(\\b[\\w.\\-]*'+K+'[\\w.\\-]*\\s*[:=]\\s*)(?:"[^"]*"|\'[^\']*\'|[^\\s,;"\']+)','gi'),'$1[REDACTED]'],
+['--password / --token flag',/(--(?:password|passwd|token|secret|api-key)\s+)\S+/gi,'$1[REDACTED]'],
+['docker login -p',/(\b(?:docker|podman) login\b[^\n]*?\s-p\s+)\S+/gi,'$1[REDACTED]']];
+const WH=[['User message','before it is stored and before retrieval','pri'],['Container logs and CI output','before they reach the LLM or the database','pri'],['Web queries','before they leave the network (built from the redacted signature)','ok'],['Web snippets and model output','before they are stored or cached','ok'],['Lessons and memory summaries','drafted text is redacted before saving','warn'],['MCP arguments and results','redact_obj() on arguments; results redacted; Docker MCP logs too','warn']];
+$('#rdWhere').innerHTML=WH.map(([a,b,c])=>`<div class="row" style="flex-wrap:nowrap;align-items:flex-start"><span class="tag ${c}" style="flex:none">${a}</span><span class="small muted">${b}</span></div>`).join('');
+const IN=$('#rdIn');IN.value=['Authorization: Bearer abcdef1234567890abcdef','DATABASE_URL=postgres://admin:S3cr3tPass@db:5432/app','{"user": "bob", "password": "hunter2"}','export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE','token ghp_abcdefghijklmnopqrstuvwxyz0123456789','docker login -u bob -p mysecret registry.local','curl --token abc123xyz https://api.example.com','jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1rwW1gFWFOEjXk','nginx: [emerg] bind() to 0.0.0.0:80 failed (98: Address already in use)'].join('\n');
+function go(){let t=IN.value;const rows=[];
+ P.forEach(([n,re,rep])=>{let c=0;t=t.replace(re,(...a)=>{c++;return rep.replace(/\$(\d)/g,(_,i)=>a[+i]||'')});rows.push([n,c])});
+ $('#rdOut').innerHTML=esc(t).replace(/\[REDACTED[A-Z_]*\]/g,m=>`<mark style="background:var(--bad-soft);color:var(--bad);border-radius:4px;padding:0 3px">${m}</mark>`);
+ $('#rdRules').innerHTML='<tr><th>Rule</th><th>Hits</th></tr>'+rows.map(([n,c])=>`<tr><td>${n}</td><td>${c?`<span class="tag bad">${c}</span>`:'<span class="muted">0</span>'}</td></tr>`).join('');
+}
+IN.oninput=go;go();
+})();
+</script>
 <section class="sec" id="sig">
-<header><span class="eyebrow">8 · Error signature and safety</span><h2>Why do two different logs share one key?</h2>
+<header><span class="eyebrow">13 · Error signature and safety</span><h2>Why do two different logs share one key?</h2>
 <p>The web cache and the answer cache work on an “error signature”. <code>textnorm.py</code> removes timestamps, IPs, ids and long numbers so the same problem on another hour or server gets the same key.</p></header>
 <div class="grid g2" style="align-items:start">
  <div class="card" style="display:grid;gap:8px"><b>Log A</b><textarea id="sgA" class="code" style="min-height:130px" spellcheck="false"></textarea></div>
@@ -807,7 +1132,7 @@ pick('conversations');
 
 <div class="card" style="margin-top:28px;display:grid;gap:10px">
  <h3 style="font-size:18px">Risky-command warnings (<code>command_safety.py</code>)</h3>
- <p class="small muted">Only fenced code blocks in an answer are scanned and the UI warns before anyone runs them. The assistant itself never executes anything.</p>
+ <p class="small muted">Only fenced code blocks in an answer are scanned and the UI warns before anyone runs them. In free chat the assistant is read-only and only prints commands; state-changing MCP tools run only after an explicit /server@tool command, with that user’s own permissions.</p>
  <textarea id="cmIn" class="code" style="min-height:140px" spellcheck="false"></textarea>
  <div id="cmOut" style="display:grid;gap:6px"></div>
 </div>
@@ -842,7 +1167,7 @@ C.oninput=cm;cm();
 })();
 </script>
 <section class="sec" id="dash">
-<header><span class="eyebrow">9 · Admin dashboard</span><h2>What the admin sees</h2>
+<header><span class="eyebrow">14 · Admin dashboard</span><h2>What the admin sees</h2>
 <p>The shape of the analytics dashboard. <b>All numbers here are sample data</b>, not real measurements; the metrics are the ones the project computes from <code>turn_events</code>, <code>feedback</code> and <code>web_cache</code>.</p></header>
 <div class="row" style="margin-bottom:12px"><span class="tag warn">sample data</span><label class="f">Range: <select id="dsRange" style="width:auto"><option value="7">7 days</option><option value="14" selected>14 days</option><option value="30">30 days</option></select></label></div>
 <div class="grid g3" id="dsKpi"></div>
@@ -891,20 +1216,14 @@ $('#dsRange').onchange=draw;draw();
 })();
 </script>
 <section class="sec" id="deploy">
-<header><span class="eyebrow">10 · Deployment and access</span><h2>Docker Compose and container access control</h2>
-<p>Nine services come up with one command. The start order comes from <code>depends_on</code> and the healthchecks. The second part shows why a user only sees the containers they were granted.</p></header>
+<header><span class="eyebrow">15 · Deployment</span><h2>Docker Compose services and start order</h2>
+<p>Nine services come up with one command. The start order comes from <code>depends_on</code> and the healthchecks.</p></header>
 <div class="card" style="display:grid;gap:12px">
  <div class="row" style="justify-content:space-between"><h3 style="font-size:18px">docker-compose.yml graph</h3><button class="btn p" id="dpPlay">Play start order</button></div>
  <div class="svgbox"><svg id="dpSvg" viewBox="0 0 1100 400" style="min-width:860px;width:100%;display:block"></svg></div>
  <div class="legend"><span>arrow = depends_on</span><span><b>healthy</b> = waits for the healthcheck</span><span><b>started</b> = just started is enough</span></div>
 </div>
 
-<div class="card" style="margin-top:16px;display:grid;gap:12px">
- <h3 style="font-size:18px">Container access test</h3>
- <p class="small muted">The outer boundary is <code>DOCKER_ALLOWED_CONTAINERS=nginx,api-*,db</code>. Inside it, admins set each user’s level. Choose a level per container for “user A”.</p>
- <div class="row"><label class="f"><input type="checkbox" id="rbAct"> <code>DOCKER_PROXY_ALLOW_ACTIONS=1</code></label></div>
- <div class="scroll"><table class="t" id="rbTab"></table></div>
-</div>
 </section>
 <script>
 addSection('deploy','Deployment');
@@ -926,19 +1245,10 @@ Object.entries(N).forEach(([id,[x,y,t,s,k]])=>{const g=S('g',{id:'dp_'+id});
 const ORD=[['postgres','redis','qdrant','searxng','dproxy'],['backend'],['dmcp','smcp'],['frontend']];
 $('#dpPlay').onclick=async()=>{Object.keys(N).forEach(i=>{$('#dp_'+i+' rect').style.fill='var(--card)'});
  for(const grp of ORD){grp.forEach(i=>$('#dp_'+i+' rect').style.fill='var(--pri-soft)');await sleep(900);grp.forEach(i=>$('#dp_'+i+' rect').style.fill='var(--ok-soft)')}};
-const CT=[['nginx','exact name in the allow-list',1],['api-1','matches pattern api-*',1],['db','exact name in the allow-list',1],['worker','not in the allow-list',0],['devops-ai-backend-1','platform core container (protected)',1,1]];
-const st={nginx:'actions',['api-1']:'logs',db:'none',worker:'actions',['devops-ai-backend-1']:'actions'};
-function rb(){const t=$('#rbTab');t.innerHTML='<tr><th>Container</th><th>User A level</th><th>Visible on the Containers page?</th><th>Assistant reads its logs?</th><th>Restart button?</th></tr>';
- CT.forEach(([n,why,allowed,prot])=>{const g=st[n];const see=allowed&&g!=='none',act=see&&g==='actions'&&$('#rbAct').checked&&!prot;
-  const tr=H('tr');tr.append(H('td',{html:`<code>${n}</code><div class="small muted">${why}</div>`}));
-  const sel=H('select',{style:'width:auto'});[['none','no access'],['logs','logs'],['actions','logs + actions']].forEach(([v,l])=>{const o=H('option',{value:v,html:l});if(v===g)o.selected=true;sel.append(o)});sel.onchange=()=>{st[n]=sel.value;rb()};tr.append(H('td',{},sel));
-  [see,see,act].forEach((v,i)=>tr.append(H('td',{html:v?'<span class="tag ok">yes</span>':`<span class="tag bad">no</span>${i===2&&see&&g==='actions'&&prot?'<div class="small muted">protected</div>':''}${i===2&&see&&g==='actions'&&!prot&&!$('#rbAct').checked?'<div class="small muted">proxy is read-only</div>':''}${!allowed?'<div class="small muted">outside the allow-list</div>':''}`})));
-  t.append(tr)})}
-$('#rbAct').onchange=rb;rb();
 })();
 </script>
 <section class="sec" id="img">
-<header><span class="eyebrow">11 · Image processing</span><h2>Screenshots: from upload to answer</h2>
+<header><span class="eyebrow">16 · Image processing</span><h2>Screenshots: from upload to answer</h2>
 <p>Users can attach screenshots of an error (terminal output, a dashboard, a browser console). Every file is treated as untrusted input: it is validated, re-encoded and stored by <code>services/images.py</code>; then a vision model reads it so retrieval and web search can work from what the picture shows; finally the answer model sees the picture itself. Change the file below and watch which rule fires.</p></header>
 
 <div class="grid g2" style="align-items:start">
